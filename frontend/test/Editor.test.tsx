@@ -7,7 +7,16 @@ vi.mock('@monaco-editor/react', () => ({
   default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
     <textarea data-testid="monaco-stub" value={value} onChange={(e) => onChange(e.target.value)} />
   ),
+  loader: { config: vi.fn() },
 }));
+
+// Editor.tsx imports the real `monaco-editor` package (to bundle it locally
+// instead of loading it from a CDN — see loader.config below). Importing the
+// real package executes DOM-touching module-init code (e.g. clipboard
+// contributions call `document.queryCommandSupported`) that jsdom doesn't
+// implement, and it's unnecessary anyway since `@monaco-editor/react` itself
+// is stubbed out above.
+vi.mock('monaco-editor', () => ({}));
 
 function fakeClient() {
   const handlers = new Map<string, ((msg: ServerMessage) => void)[]>();

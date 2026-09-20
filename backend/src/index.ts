@@ -5,7 +5,9 @@ import { createServer } from './server.js';
 const args = process.argv.slice(2);
 const portFlagIndex = args.indexOf('--port');
 const port = portFlagIndex !== -1 ? Number(args[portFlagIndex + 1]) : 4287;
-const dirArgs = args.filter((a, i) => a !== '--port' && i !== portFlagIndex + 1);
+const dirArgs = portFlagIndex === -1
+  ? args
+  : args.filter((_, i) => i !== portFlagIndex && i !== portFlagIndex + 1);
 const rootDir = path.resolve(dirArgs[0] ?? process.cwd());
 
 const { httpServer } = createServer(rootDir);
