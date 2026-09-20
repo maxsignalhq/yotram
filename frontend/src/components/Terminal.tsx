@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from 'xterm';
+import 'xterm/css/xterm.css';
 import { FitAddon } from 'xterm-addon-fit';
 import type { WsClient } from '../wsClient';
 
