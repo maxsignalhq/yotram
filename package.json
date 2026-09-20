@@ -1,0 +1,9 @@
+{
+  "name": "yotram",
+  "private": true,
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}
