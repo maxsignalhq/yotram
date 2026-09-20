@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import MonacoEditor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import type { WsClient } from '../wsClient';
+import type { Theme } from '../theme';
 
 // Use the locally bundled Monaco instance instead of the default behavior of
 // fetching Monaco from the jsdelivr CDN at runtime. This keeps the editor
@@ -36,7 +37,7 @@ self.MonacoEnvironment = {
   },
 };
 
-export function Editor({ client, path }: { client: WsClient; path: string | null }) {
+export function Editor({ client, path, theme = 'dark' }: { client: WsClient; path: string | null; theme?: Theme }) {
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
   const [conflict, setConflict] = useState(false);
@@ -80,18 +81,24 @@ export function Editor({ client, path }: { client: WsClient; path: string | null
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [client, path, content]);
 
-  if (!path) return <div>No file open</div>;
+  if (!path) return <div className="editor-pane editor-empty">No file open</div>;
 
   return (
-    <div>
+    <div className="editor-pane">
       {conflict && (
-        <div role="alert">
+        <div role="alert" className="editor-conflict">
           file changed on disk — reload or keep mine?
           <button onClick={() => { client.send({ type: 'fs:read', path }); setConflict(false); }}>Reload</button>
           <button onClick={() => setConflict(false)}>Keep mine</button>
         </div>
       )}
-      <MonacoEditor value={content} onChange={(value: string | undefined) => setContent(value ?? '')} />
+      <div className="editor-monaco-wrapper">
+        <MonacoEditor
+          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
+          value={content}
+          onChange={(value: string | undefined) => setContent(value ?? '')}
+        />
+      </div>
     </div>
   );
 }

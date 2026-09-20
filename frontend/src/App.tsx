@@ -3,8 +3,10 @@ import { WsClient } from './wsClient';
 import { FileTree } from './components/FileTree';
 import { Editor } from './components/Editor';
 import { Terminal } from './components/Terminal';
+import { useTheme } from './theme';
 
 export default function App() {
+  const [theme, toggleTheme] = useTheme();
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
   const [openPath, setOpenPath] = useState<string | null>(null);
@@ -25,25 +27,27 @@ export default function App() {
 
   if (!client) {
     return (
-      <div>
+      <div className="app-onboarding">
         <h1>Open a project</h1>
-        <button onClick={() => setConnected(true)}>Open current directory</button>
+        <button className="button-primary" onClick={() => setConnected(true)}>
+          Open current directory
+        </button>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 1fr', height: '100vh' }}>
+    <div className="app-shell">
       {status !== 'open' && (
-        <div role="status" style={{ gridColumn: '1 / -1' }}>
+        <div role="status" className="reconnect-banner">
           reconnecting...
         </div>
       )}
       {ready && (
         <>
-          <FileTree client={client} onOpenFile={setOpenPath} />
-          <Editor client={client} path={openPath} />
-          <Terminal client={client} sessionId="main" />
+          <FileTree client={client} onOpenFile={setOpenPath} theme={theme} onToggleTheme={toggleTheme} />
+          <Editor client={client} path={openPath} theme={theme} />
+          <Terminal client={client} sessionId="main" theme={theme} />
         </>
       )}
     </div>

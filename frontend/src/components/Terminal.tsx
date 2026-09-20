@@ -3,12 +3,20 @@ import { Terminal as XTerm } from 'xterm';
 import 'xterm/css/xterm.css';
 import { FitAddon } from 'xterm-addon-fit';
 import type { WsClient } from '../wsClient';
+import type { Theme } from '../theme';
 
-export function Terminal({ client, sessionId }: { client: WsClient; sessionId: string }) {
+const XTERM_THEMES: Record<Theme, { background: string; foreground: string; cursor: string }> = {
+  dark: { background: '#1e1e1e', foreground: '#cccccc', cursor: '#cccccc' },
+  light: { background: '#ffffff', foreground: '#1e1e1e', cursor: '#1e1e1e' },
+};
+
+export function Terminal({ client, sessionId, theme = 'dark' }: { client: WsClient; sessionId: string; theme?: Theme }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<XTerm | null>(null);
 
   useEffect(() => {
-    const term = new XTerm();
+    const term = new XTerm({ theme: XTERM_THEMES[theme] });
+    termRef.current = term;
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     if (containerRef.current) term.open(containerRef.current);
@@ -36,8 +44,19 @@ export function Terminal({ client, sessionId }: { client: WsClient; sessionId: s
       unsubData();
       unsubExit();
       term.dispose();
+      termRef.current = null;
     };
+    // `theme` is intentionally not a dependency here: recreating the terminal
+    // on every toggle would re-issue `pty:create` for the same sessionId and
+    // orphan the running shell. Theme changes are applied live below instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, sessionId]);
 
-  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
+  useEffect(() => {
+    if (termRef.current?.options) {
+      termRef.current.options.theme = XTERM_THEMES[theme];
+    }
+  }, [theme]);
+
+  return <div ref={containerRef} className="terminal-pane" />;
 }
