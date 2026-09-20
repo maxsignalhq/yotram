@@ -1,4 +1,6 @@
 import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { WorkspaceFs } from './fs.js';
@@ -7,6 +9,8 @@ import { isClientMessage, ServerMessage } from './protocol.js';
 
 export function createServer(rootDir: string): { httpServer: http.Server; close: () => void } {
   const app = express();
+  const frontendDist = path.resolve(fileURLToPath(import.meta.url), '../../../frontend/dist');
+  app.use(express.static(frontendDist));
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ server: httpServer });
   const workspaceFs = new WorkspaceFs(rootDir);
