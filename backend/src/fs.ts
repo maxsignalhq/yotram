@@ -1,5 +1,6 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import chokidar, { FSWatcher } from 'chokidar';
 
 export class PathEscapeError extends Error {
   constructor(relPath: string) {
@@ -9,6 +10,8 @@ export class PathEscapeError extends Error {
 }
 
 export class WorkspaceFs {
+  private watcher?: FSWatcher;
+
   constructor(private readonly rootDir: string) {}
 
   private resolve(relPath: string): string {
@@ -32,5 +35,15 @@ export class WorkspaceFs {
 
   async write(relPath: string, content: string): Promise<void> {
     await writeFile(this.resolve(relPath), content, 'utf-8');
+  }
+
+  watch(onEvent: (event: { path: string; kind: 'add' | 'change' | 'unlink' }) => void): () => void {
+    const watcher = chokidar.watch(this.rootDir, { ignoreInitial: true });
+    const relOf = (absolute: string) => path.relative(this.rootDir, absolute);
+    watcher.on('add', (p) => onEvent({ path: relOf(p), kind: 'add' }));
+    watcher.on('change', (p) => onEvent({ path: relOf(p), kind: 'change' }));
+    watcher.on('unlink', (p) => onEvent({ path: relOf(p), kind: 'unlink' }));
+    this.watcher = watcher;
+    return () => { watcher.close(); };
   }
 }
