@@ -1,9 +1,16 @@
 {
   "name": "yotram",
   "private": true,
-  "workspaces": ["backend", "frontend"],
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "test:e2e": "playwright test --config=e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }
