@@ -22,8 +22,10 @@ export class WsClient {
   private statusHandlers = new Set<(status: Status) => void>();
   private backoffMs = 500;
   private closedByUser = false;
+  private readonly url: string;
 
-  constructor(private readonly url: string) {
+  constructor(url: string) {
+    this.url = url;
     this.socket = this.connect();
   }
 
