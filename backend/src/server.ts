@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Workspaces } from './workspaces.js';
 import { WorkspaceFs } from './fs.js';
 import { PtyManager } from './pty.js';
+import { Git } from './git.js';
 import { isClientMessage, ServerMessage } from './protocol.js';
 import { Auth, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from './auth.js';
 
@@ -173,6 +174,7 @@ export function createServer(rootDir: string, options: { password: string }): { 
       const workspace = workspaces.get(id);
       if (!workspace) { ws.close(1008, 'Unknown workspace'); return; }
       const workspaceFs = new WorkspaceFs(workspace.path);
+      const git = new Git(workspace.path);
       roots.set(ws, workspace.path);
       const unwatch = workspaceFs.watch(event => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'fs:watch-event', ...event }));
@@ -247,6 +249,64 @@ export function createServer(rootDir: string, options: { password: string }): { 
             }
             case 'pty:resize': {
               ptyManager.resize(parsed.sessionId, parsed.cols, parsed.rows);
+              break;
+            }
+            case 'git:status': {
+              try {
+                const result = await git.status();
+                ws.send(JSON.stringify({ type: 'git:status', ...result }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'git:error', message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'git:diff': {
+              try {
+                const result = await git.diff(parsed.path, parsed.staged);
+                ws.send(JSON.stringify({ type: 'git:diff', path: parsed.path, staged: parsed.staged, ...result }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'git:error', message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'git:stage': case 'git:unstage': {
+              try {
+                if (parsed.type === 'git:stage') await git.stage(parsed.path); else await git.unstage(parsed.path);
+                const result = await git.status();
+                ws.send(JSON.stringify({ type: 'git:status', ...result }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'git:error', message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'git:commit': {
+              try {
+                await git.commit(parsed.message);
+                const result = await git.status();
+                ws.send(JSON.stringify({ type: 'git:status', ...result }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'git:error', message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'git:branches': {
+              try {
+                const branches = await git.branches();
+                ws.send(JSON.stringify({ type: 'git:branches', branches }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'git:error', message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'git:checkout': {
+              try {
+                await git.checkout(parsed.name);
+                const [status, branches] = await Promise.all([git.status(), git.branches()]);
+                ws.send(JSON.stringify({ type: 'git:status', ...status }));
+                ws.send(JSON.stringify({ type: 'git:branches', branches }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'git:error', message: (err as Error).message }));
+              }
               break;
             }
           }
