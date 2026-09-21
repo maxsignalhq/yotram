@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { TEST_PASSWORD } from './testPassword';
 
 const fixtureDir = path.resolve(__dirname, 'fixture-workspace');
 
@@ -14,6 +15,12 @@ test.beforeAll(() => {
 
 test.afterAll(() => {
   rmSync(fixtureDir, { recursive: true, force: true });
+});
+
+test.beforeEach(async ({ context, baseURL }) => {
+  await context.request.post(`${baseURL}/api/login`, {
+    data: { password: TEST_PASSWORD },
+  });
 });
 
 test('edit a file and run a shell command end-to-end', async ({ page }) => {
