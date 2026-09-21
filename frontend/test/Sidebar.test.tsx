@@ -1,3 +1,4 @@
+// frontend/test/Sidebar.test.tsx
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { Sidebar } from '../src/components/Sidebar';
@@ -29,14 +30,14 @@ describe('Sidebar', () => {
 
   it('shows the file tree by default', () => {
     const client = fakeClient();
-    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} />);
+    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} workspacePath="/tmp/demo" onResumeSession={() => {}} />);
     expect(client.send).toHaveBeenCalledWith({ type: 'fs:list', path: '.' });
     expect(client.send).not.toHaveBeenCalledWith({ type: 'git:status' });
   });
 
   it('switches to the Git tab and requests git status only once opened', () => {
     const client = fakeClient();
-    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} />);
+    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} workspacePath="/tmp/demo" onResumeSession={() => {}} />);
     fireEvent.click(screen.getByRole('tab', { name: 'Git' }));
     expect(client.send).toHaveBeenCalledWith({ type: 'git:status' });
   });
@@ -44,8 +45,19 @@ describe('Sidebar', () => {
   it('calls onToggleTheme when the theme toggle is clicked, and reflects the current theme in its label', () => {
     const client = fakeClient();
     const onToggleTheme = vi.fn();
-    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} theme="dark" onToggleTheme={onToggleTheme} />);
+    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} theme="dark" onToggleTheme={onToggleTheme} workspacePath="/tmp/demo" onResumeSession={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
     expect(onToggleTheme).toHaveBeenCalledTimes(1);
+  });
+
+  it('switches to the Sessions tab and fetches sessions for the workspace path only once opened', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    const client = fakeClient();
+    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} workspacePath="/tmp/demo" onResumeSession={() => {}} />);
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('tab', { name: 'Sessions' }));
+    await screen.findByText('No past sessions found for this project.');
+    expect(fetch).toHaveBeenCalledWith('/api/sessions?path=%2Ftmp%2Fdemo');
+    vi.unstubAllGlobals();
   });
 });

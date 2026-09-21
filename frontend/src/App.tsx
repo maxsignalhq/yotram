@@ -66,6 +66,22 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
   }, [dirty]);
   if (!client) return <div className="app-onboarding" role="status">Opening workspace…</div>;
 
+  function resumeInNewTerminal(command: string) {
+    if (!client) return;
+    const activeClient = client;
+    const id = crypto.randomUUID();
+    setTerminals(current => [...current, id]);
+    setActiveTerminal(id);
+    setTerminalVisible(true);
+    // `Terminal` sends its own `pty:create` on mount; there's no "ready" ack
+    // in the protocol, so this waits a short, generous margin for that mount
+    // effect to run before typing the resume command. Sending `pty:create`
+    // ourselves here instead would race Terminal's own call and, since
+    // PtyManager.create() kills any existing session with the same id
+    // first, could kill and respawn the just-created shell.
+    setTimeout(() => activeClient.send({ type: 'pty:data', sessionId: id, data: command }), 150);
+  }
+
   return (
     <div className="workspace-view">
       <header className="workspace-header"><button onClick={() => {
@@ -90,7 +106,7 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
       )}
       {ready && (
         <>
-          <Sidebar client={client} onOpenFile={path => { setOpenPath(path); setOpenVersion(value => value + 1); }} theme={theme} onToggleTheme={toggleTheme} />
+          <Sidebar client={client} onOpenFile={path => { setOpenPath(path); setOpenVersion(value => value + 1); }} theme={theme} onToggleTheme={toggleTheme} workspacePath={workspace.path} onResumeSession={resumeInNewTerminal} />
           <Editor client={client} path={openPath} openVersion={openVersion} theme={theme} onDirtyChange={setDirty} />
           {preview && <Preview />}
           {terminals.length > 0 && <section className="terminal-section" hidden={!terminalVisible}>

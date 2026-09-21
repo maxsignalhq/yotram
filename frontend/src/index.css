@@ -348,3 +348,9 @@ input { background: var(--ide-bg); color: var(--ide-text); border: 1px solid var
 .git-commit { display: flex; flex-direction: column; gap: 6px; }
 .git-commit textarea { background: var(--ide-bg); color: var(--ide-text); border: 1px solid var(--ide-border); padding: 6px; border-radius: var(--ide-radius); font: inherit; resize: vertical; min-height: 50px; }
 .git-diff-wrapper { flex: 1; min-height: 200px; }
+.sessions-panel { display: flex; flex-direction: column; overflow-y: auto; padding: var(--ide-space-2) var(--ide-space-3); }
+.sessions-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ide-space-2); }
+.sessions-list li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--ide-border); }
+.session-agent-badge { flex-shrink: 0; padding: 1px 6px; border-radius: 3px; background: var(--ide-bg-elevated); color: var(--ide-text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.session-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-time { flex-shrink: 0; color: var(--ide-text-muted); font-size: 11px; }
