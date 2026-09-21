@@ -150,4 +150,19 @@ describe('authentication', () => {
     });
     expect(response.status).toBe(200);
   });
+
+  it('logs out by clearing the session cookie, and the cleared cookie no longer authenticates', async () => {
+    const logout = await fetch(`http://127.0.0.1:${port}/api/logout`, {
+      method: 'POST', headers: { Cookie: sessionCookie },
+    });
+    expect(logout.status).toBe(200);
+    const setCookie = logout.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain(`${SESSION_COOKIE_NAME}=;`);
+    expect(setCookie).toContain('Max-Age=0');
+
+    const afterLogout = await fetch(`http://127.0.0.1:${port}/api/workspaces/default`, {
+      headers: { Cookie: setCookie.split(';')[0] },
+    });
+    expect(afterLogout.status).toBe(401);
+  });
 });

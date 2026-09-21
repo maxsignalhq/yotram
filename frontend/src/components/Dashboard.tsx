@@ -25,7 +25,15 @@ export function Dashboard({ onOpen }: { onOpen: (workspace: Workspace) => void }
       onOpen(result);
     } catch (error) { setError(error instanceof TypeError ? 'Cannot connect to Yotram. Check that the local server is running, then try again.' : (error as Error).message); } finally { setBusy(false); }
   }
+  const [copied, setCopied] = useState(false);
   return <main className="dashboard"><div className="dashboard-inner">
+    <div className="dashboard-topbar">
+      <span className="dashboard-share" title="Open this address from another device on your network">
+        {window.location.origin}
+        <button type="button" onClick={() => { navigator.clipboard?.writeText(window.location.origin).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {}); }}>{copied ? 'Copied' : 'Copy'}</button>
+      </span>
+      <button type="button" onClick={() => { void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.reload()); }}>Log out</button>
+    </div>
     <p className="eyebrow">YOTRAM · LOCAL WORKSPACES</p><h1>Your projects, in your browser.</h1>
     <p className="dashboard-description">Open a folder on this Mac, or create a starter web app. Your files stay on disk.</p>
     {error && <p role="alert" className="editor-conflict">{error}</p>}

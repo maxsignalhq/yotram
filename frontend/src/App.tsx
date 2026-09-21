@@ -56,7 +56,9 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
       }}>Projects</button><strong>{workspace.name}</strong><span title={workspace.path}>{workspace.path}</span><button aria-label={terminalVisible ? 'Hide terminal' : 'Open terminal'} aria-pressed={terminalVisible} onClick={() => {
         if (!terminalVisible && terminals.length === 0) { setTerminals(['main']); setActiveTerminal('main'); }
         setTerminalVisible(value => !value);
-      }}>Terminal</button><button aria-pressed={preview} onClick={() => setPreview(value => !value)}>Preview</button></header>
+      }}>Terminal</button><button aria-pressed={preview} onClick={() => setPreview(value => !value)}>Preview</button><button onClick={() => {
+        void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.reload());
+      }}>Log out</button></header>
       <div className={`app-shell${terminalVisible ? '' : ' without-terminal'}${preview ? ' with-preview' : ''}`}>
       {status !== 'open' && (
         <div role="status" className="reconnect-banner">

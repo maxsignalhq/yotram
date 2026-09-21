@@ -29,14 +29,59 @@ function serializeSessionCookie(token: string): string {
   return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 }
 
+function clearSessionCookie(): string {
+  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
 const LOGIN_PAGE_HTML = `<!doctype html>
 <html>
-<head><meta charset="utf-8"><title>Yotram — Sign in</title></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yotram — Sign in</title>
+  <style>
+    :root {
+      --bg: #ffffff; --bg-panel: #f3f3f3; --border: #d4d4d4; --text: #1e1e1e;
+      --text-muted: #6e6e6e; --accent: #005fb8; --accent-fg: #ffffff;
+      --danger-text: #7a1f1a;
+      color-scheme: light dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1e1e; --bg-panel: #252526; --border: #3c3c3c; --text: #cccccc;
+        --text-muted: #8a8a8a; --accent: #3794ff; --accent-fg: #ffffff;
+        --danger-text: #f48771;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, 'Segoe UI', system-ui, Roboto, sans-serif;
+    }
+    main { width: min(320px, 90vw); padding: 28px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; }
+    p.eyebrow { margin: 0 0 4px; color: var(--accent); font-size: 11px; letter-spacing: .14em; }
+    h1 { margin: 0 0 20px; font-size: 20px; }
+    label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--text-muted); }
+    input {
+      width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      padding: 10px; border-radius: 5px; font: inherit; margin-bottom: 12px;
+    }
+    button {
+      width: 100%; padding: 10px; border: none; border-radius: 5px;
+      background: var(--accent); color: var(--accent-fg); font-size: 14px; cursor: pointer;
+    }
+    button:hover { filter: brightness(1.08); }
+    #error { min-height: 16px; margin: 10px 0 0; color: var(--danger-text); font-size: 12px; }
+  </style>
+</head>
 <body>
-  <main style="max-width: 320px; margin: 20vh auto; font-family: sans-serif;">
-    <h1>Yotram</h1>
+  <main>
+    <p class="eyebrow">YOTRAM</p>
+    <h1>Sign in</h1>
     <form id="login">
-      <input type="password" name="password" placeholder="Password" autofocus required />
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" placeholder="Password" autofocus required />
       <button type="submit">Sign in</button>
     </form>
     <p id="error" role="alert"></p>
@@ -81,6 +126,10 @@ export function createServer(rootDir: string, options: { password: string }): { 
     if (auth.verifySessionToken(cookies[SESSION_COOKIE_NAME])) { next(); return; }
     if (req.path.startsWith('/api/')) { res.status(401).json({ error: 'Unauthorized' }); return; }
     res.status(401).type('html').send(LOGIN_PAGE_HTML);
+  });
+  app.post('/api/logout', (_req, res) => {
+    res.setHeader('Set-Cookie', clearSessionCookie());
+    res.status(200).json({ ok: true });
   });
   app.get('/api/workspaces/default', (_req, res) => res.json(workspaces.get('local')));
   app.get('/api/folders', async (req, res) => {
