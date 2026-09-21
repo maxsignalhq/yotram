@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { WsClient } from './wsClient';
-import { FileTree } from './components/FileTree';
+import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { Terminal } from './components/Terminal';
 import { Dashboard, type Workspace } from './components/Dashboard';
@@ -67,7 +67,7 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
       )}
       {ready && (
         <>
-          <FileTree client={client} onOpenFile={path => { setOpenPath(path); setOpenVersion(value => value + 1); }} theme={theme} onToggleTheme={toggleTheme} />
+          <Sidebar client={client} onOpenFile={path => { setOpenPath(path); setOpenVersion(value => value + 1); }} theme={theme} onToggleTheme={toggleTheme} />
           <Editor client={client} path={openPath} openVersion={openVersion} theme={theme} onDirtyChange={setDirty} />
           {preview && <Preview />}
           {terminals.length > 0 && <section className="terminal-section" hidden={!terminalVisible}>

@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WsClient } from '../wsClient';
-import type { Theme } from '../theme';
 interface Entry { name: string; isDirectory: boolean }
-export function FileTree({ client, onOpenFile, theme = 'dark', onToggleTheme = () => {} }: {
-  client: WsClient; onOpenFile: (path: string) => void; theme?: Theme; onToggleTheme?: () => void;
-}) {
+export function FileTree({ client, onOpenFile }: { client: WsClient; onOpenFile: (path: string) => void }) {
   const [listings, setListings] = useState<Record<string, Entry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['.']));
   const expandedRef = useRef(expanded); expandedRef.current = expanded;
@@ -37,8 +34,7 @@ export function FileTree({ client, onOpenFile, theme = 'dark', onToggleTheme = (
       }}>{entry.isDirectory ? (expanded.has(path) ? '▾ ' : '▸ ') : ''}{entry.name}</button>{entry.isDirectory && expanded.has(path) && tree(path)}</li>;
     })}</ul>;
   }
-  return <aside className="filetree">
-    <div className="filetree-header">Explorer<button onClick={onToggleTheme} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}>◐</button></div>
+  return <>
     <div className="pane-toolbar"><button onClick={() => create(false)}>New file</button><button onClick={() => create(true)}>New folder</button></div>
     <div className="pane-toolbar"><button disabled={selected === '.'} onClick={() => {
       const destination = window.prompt('Rename to path:', selected);
@@ -48,5 +44,5 @@ export function FileTree({ client, onOpenFile, theme = 'dark', onToggleTheme = (
     }}>Delete</button></div>
     {error && <div role="alert">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
     {tree('.')}
-  </aside>;
+  </>;
 }

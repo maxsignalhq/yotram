@@ -38,20 +38,4 @@ describe('FileTree', () => {
     fireEvent.click(screen.getByText('a.txt'));
     expect(onOpenFile).toHaveBeenCalledWith('a.txt');
   });
-
-  it('calls onToggleTheme when the theme toggle is clicked, and reflects the current theme in its label', () => {
-    const client = fakeClient();
-    const onToggleTheme = vi.fn();
-    render(
-      <FileTree
-        client={client as unknown as WsClient}
-        onOpenFile={() => {}}
-        theme="dark"
-        onToggleTheme={onToggleTheme}
-      />,
-    );
-    const toggle = screen.getByRole('button', { name: 'Switch to light theme' });
-    fireEvent.click(toggle);
-    expect(onToggleTheme).toHaveBeenCalledTimes(1);
-  });
 });

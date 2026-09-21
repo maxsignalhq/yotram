@@ -337,3 +337,14 @@ input { background: var(--ide-bg); color: var(--ide-text); border: 1px solid var
   .dashboard-topbar { flex-wrap: wrap; }
   .dashboard-share { flex-basis: 100%; }
 }
+
+.sidebar-tabs { display: flex; gap: 4px; }
+.git-panel { display: flex; flex-direction: column; overflow-y: auto; padding: var(--ide-space-2) var(--ide-space-3); gap: var(--ide-space-3); }
+.git-empty { color: var(--ide-text-muted); padding: var(--ide-space-3); }
+.git-file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.git-file-list li { display: flex; align-items: center; gap: 6px; }
+.git-file-list li > button:first-child, .git-file-list li > span { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; background: none; border: none; padding: 2px 0; color: var(--ide-text); cursor: pointer; }
+.git-file-list li > span { cursor: default; }
+.git-commit { display: flex; flex-direction: column; gap: 6px; }
+.git-commit textarea { background: var(--ide-bg); color: var(--ide-text); border: 1px solid var(--ide-border); padding: 6px; border-radius: var(--ide-radius); font: inherit; resize: vertical; min-height: 50px; }
+.git-diff-wrapper { flex: 1; min-height: 200px; }
