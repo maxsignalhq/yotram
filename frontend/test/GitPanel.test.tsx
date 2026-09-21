@@ -93,6 +93,15 @@ describe('GitPanel', () => {
     expect(client.send).toHaveBeenCalledWith({ type: 'git:checkout', name: 'feature' });
   });
 
+  it('re-requests git:status when an fs:watch-event message arrives', () => {
+    const client = fakeClient();
+    render(<GitPanel client={client as unknown as WsClient} />);
+    client.emit({ type: 'git:status', isRepo: true, branch: 'main', staged: [], unstaged: [], untracked: [] });
+    client.send.mockClear();
+    client.emit({ type: 'fs:watch-event', path: 'a.ts', kind: 'change' });
+    expect(client.send).toHaveBeenCalledWith({ type: 'git:status' });
+  });
+
   it('shows an error message from git:error', () => {
     const client = fakeClient();
     render(<GitPanel client={client as unknown as WsClient} />);

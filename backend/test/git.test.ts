@@ -45,6 +45,31 @@ describe('Git.status', () => {
     expect(status.untracked).toEqual(['new.txt']);
   });
 
+  it('lists an untracked file with a space in its name, unquoted', async () => {
+    await initRepo();
+    await writeFile(path.join(root, 'my file.txt'), 'hi');
+    const status = await git.status();
+    expect(status.untracked).toEqual(['my file.txt']);
+  });
+
+  it('stages a space-named file successfully', async () => {
+    await initRepo();
+    await writeFile(path.join(root, 'my file.txt'), 'hi');
+    await git.stage('my file.txt');
+    const status = await git.status();
+    expect(status.staged).toEqual(['my file.txt']);
+    expect(status.untracked).toEqual([]);
+  });
+
+  it('returns real, non-empty diff content for a staged space-named file', async () => {
+    await initRepo();
+    await writeFile(path.join(root, 'my file.txt'), 'hello from a space file');
+    await git.stage('my file.txt');
+    const diff = await git.diff('my file.txt', true);
+    expect(diff.before).toBe('');
+    expect(diff.after).toBe('hello from a space file');
+  });
+
   it('separates staged from unstaged changes to a tracked file', async () => {
     await initRepo();
     await writeFile(path.join(root, 'a.txt'), 'one');
@@ -103,6 +128,15 @@ describe('Git.diff', () => {
   });
 });
 
+describe('Git path containment', () => {
+  it('rejects diff, stage, and unstage for paths outside the workspace root', async () => {
+    await initRepo();
+    await expect(git.diff('../outside.txt', false)).rejects.toThrow();
+    await expect(git.stage('../outside.txt')).rejects.toThrow();
+    await expect(git.unstage('../outside.txt')).rejects.toThrow();
+  });
+});
+
 describe('Git.commit', () => {
   it('commits staged changes and clears status', async () => {
     await initRepo();
@@ -150,6 +184,29 @@ describe('Git.branches / checkout', () => {
     await git.checkout('feature');
     const status = await git.status();
     expect(status.branch).toBe('feature');
+  });
+
+  it('rejects checkout of a flag-like non-branch name without invoking git', async () => {
+    await initRepo();
+    await writeFile(path.join(root, 'a.txt'), 'one');
+    await run('git', ['add', '.'], { cwd: root });
+    await run('git', ['commit', '-q', '-m', 'init'], { cwd: root });
+    await writeFile(path.join(root, 'a.txt'), 'uncommitted edit');
+    const before = await git.status();
+    await expect(git.checkout('-f')).rejects.toThrow('Unknown branch: -f');
+    const after = await git.status();
+    expect(after.branch).toBe(before.branch);
+    // -f would have discarded this uncommitted edit if it had reached git.
+    expect(after.unstaged).toEqual(['a.txt']);
+  });
+
+  it('rejects checkout of a nonexistent branch name', async () => {
+    await initRepo();
+    await writeFile(path.join(root, 'a.txt'), 'one');
+    await run('git', ['add', '.'], { cwd: root });
+    await run('git', ['commit', '-q', '-m', 'init'], { cwd: root });
+    await expect(git.checkout('does-not-exist')).rejects.toThrow('Unknown branch: does-not-exist');
+    expect((await git.status()).branch).toBe('main');
   });
 
   it('rejects checkout with conflicting uncommitted changes, without switching', async () => {

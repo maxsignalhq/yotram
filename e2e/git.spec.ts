@@ -43,6 +43,11 @@ test('stages and commits a change from the git panel', async ({ page }) => {
   await expect(gitPanel.getByText('tracked.txt')).toBeVisible();
   await page.getByLabel('Stage tracked.txt').click();
   await expect(page.getByText('Staged (1)')).toBeVisible();
+
+  await page.getByRole('button', { name: 'tracked.txt', exact: true }).click();
+  const diffWrapper = page.locator('.git-diff-wrapper');
+  await expect(diffWrapper.locator('.monaco-diff-editor')).toBeVisible();
+
   await page.getByLabel('Commit message').fill('update tracked file');
   await page.getByRole('button', { name: 'Commit', exact: true }).click();
   await expect(page.getByText('Staged (0)')).toBeVisible();

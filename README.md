@@ -39,6 +39,7 @@ The shared password is the primary control on who can reach the IDE. Anyone who 
 - Open multiple terminals, resize them with the panel, and close their shell processes.
 - Refresh directory listings after changes and reload clean open files when they change externally. Dirty files show a conflict prompt.
 - Reconnect the browser connection, refresh open files, and start replacement shells after a disconnect. Running shells are not preserved across disconnects.
+- View git status (staged/unstaged/untracked), view diffs, stage/unstage, commit, and switch branches from the Files/Git sidebar tab, for folders that are git repositories. This is local-only: push, pull, and fetch are not exposed here and stay a terminal operation.
 
 File contents persist on disk. Unsaved buffers do not survive a browser reload. Shells run with the server user's permissions. The filesystem API's path checks do not sandbox shell commands.
 

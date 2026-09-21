@@ -20,6 +20,7 @@ export function GitPanel({ client, theme = 'dark' }: { client: WsClient; theme?:
       client.on('git:branches', msg => setBranches(msg.branches)),
       client.on('git:diff', msg => setDiff(msg)),
       client.on('git:error', msg => setError(msg.message)),
+      client.on('fs:watch-event', () => client.send({ type: 'git:status' })),
     ];
     client.send({ type: 'git:status' });
     client.send({ type: 'git:branches' });
@@ -71,6 +72,16 @@ export function GitPanel({ client, theme = 'dark' }: { client: WsClient; theme?:
       <textarea id="commit-message" value={message} onChange={event => setMessage(event.target.value)} />
       <button type="submit" disabled={status.staged.length === 0 || !message.trim()}>Commit</button>
     </form>
-    {diff && <div className="git-diff-wrapper"><DiffEditor original={diff.before} modified={diff.after} theme={theme === 'dark' ? 'vs-dark' : 'vs'} options={{ readOnly: true, automaticLayout: true }} /></div>}
+    {/*
+      DiffEditor defaults to height: '100%'. That only resolves if every ancestor up
+      to .git-diff-wrapper has a *definite* (not content-derived) height — but
+      .git-panel's own height is itself derived from summing its children's content,
+      one of which is .git-diff-wrapper (flex: 1). That circular relationship means
+      .git-diff-wrapper's height is numerically real (clamped by its min-height) but
+      not "definite" per the CSS percentage-resolution rules, so a height: 100% child
+      collapses to 0. Passing a fixed pixel height here sidesteps that cascade instead
+      of relying on percentage resolution.
+    */}
+    {diff && <div className="git-diff-wrapper"><DiffEditor height="300px" original={diff.before} modified={diff.after} theme={theme === 'dark' ? 'vs-dark' : 'vs'} options={{ readOnly: true, automaticLayout: true }} /></div>}
   </div>;
 }
