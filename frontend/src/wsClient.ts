@@ -1,18 +1,5 @@
-export type ClientMessage =
-  | { type: 'fs:list'; path: string }
-  | { type: 'fs:read'; path: string }
-  | { type: 'fs:write'; path: string; content: string }
-  | { type: 'pty:create'; sessionId: string; cols: number; rows: number }
-  | { type: 'pty:data'; sessionId: string; data: string }
-  | { type: 'pty:resize'; sessionId: string; cols: number; rows: number };
-
-export type ServerMessage =
-  | { type: 'fs:list'; path: string; entries: { name: string; isDirectory: boolean }[] }
-  | { type: 'fs:read'; path: string; content: string }
-  | { type: 'fs:watch-event'; path: string; kind: 'add' | 'change' | 'unlink' }
-  | { type: 'fs:error'; path: string; message: string }
-  | { type: 'pty:data'; sessionId: string; data: string }
-  | { type: 'pty:exit'; sessionId: string; exitCode: number };
+import type { ClientMessage, ServerMessage } from '../../backend/src/protocol';
+export type { ClientMessage, ServerMessage };
 
 type Status = 'connecting' | 'open' | 'closed';
 
@@ -22,6 +9,7 @@ export class WsClient {
   private statusHandlers = new Set<(status: Status) => void>();
   private backoffMs = 500;
   private closedByUser = false;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
   private readonly url: string;
 
   constructor(url: string) {
@@ -43,7 +31,7 @@ export class WsClient {
     socket.onclose = () => {
       this.setStatus('closed');
       if (!this.closedByUser) {
-        setTimeout(() => { this.socket = this.connect(); }, this.backoffMs);
+        this.reconnectTimer = setTimeout(() => { if (!this.closedByUser) this.socket = this.connect(); }, this.backoffMs);
         this.backoffMs = Math.min(this.backoffMs * 2, 5000);
       }
     };
@@ -55,6 +43,7 @@ export class WsClient {
   }
 
   send(msg: ClientMessage): void {
+    if (this.socket.readyState !== WebSocket.OPEN) return;
     this.socket.send(JSON.stringify(msg));
   }
 
@@ -75,6 +64,7 @@ export class WsClient {
 
   close(): void {
     this.closedByUser = true;
+    clearTimeout(this.reconnectTimer);
     this.socket.close();
   }
 }

@@ -255,3 +255,55 @@ button {
   padding: var(--ide-space-2);
   min-width: 0;
 }
+
+.app-shell { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) 260px; }
+.filetree { grid-column: 1; grid-row: 1 / -1; }
+.editor-pane { grid-column: 2; grid-row: 1; min-height: 0; }
+.terminal-section { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--ide-border); }
+.terminal-container { flex: 1; min-height: 0; }
+.terminal-pane { height: 100%; }
+.pane-toolbar { display: flex; gap: 4px; padding: 5px; overflow-x: auto; flex-shrink: 0; background: var(--ide-bg-panel); border-bottom: 1px solid var(--ide-border); }
+.pane-toolbar button, .filetree-header button { background: transparent; border: 1px solid var(--ide-border); border-radius: 3px; padding: 4px 8px; cursor: pointer; white-space: nowrap; }
+button:disabled { opacity: .45; cursor: default; }
+button[aria-selected='true'], button[aria-pressed='true'], button[aria-current='true'] { background: var(--ide-bg-hover); color: var(--ide-accent); }
+.editor-tab { display: flex; }
+.filetree-list .filetree-list { padding-left: 12px; }
+.reconnect-banner { position: fixed; top: 0; right: 0; z-index: 10; }
+
+.dashboard { min-height: 100vh; padding: 60px 24px; background: var(--ide-bg); }
+.dashboard-inner { max-width: 760px; margin: auto; }
+.eyebrow { color: var(--ide-accent); font-size: 11px; letter-spacing: .14em; }
+.dashboard h1 { font-size: 34px; letter-spacing: -.03em; }
+.dashboard-description, .project-path, .project-card > p { color: var(--ide-text-muted); line-height: 1.6; }
+.project-card { margin: 30px 0; padding: 24px; background: var(--ide-bg-panel); border: 1px solid var(--ide-border); border-radius: 10px; }
+.project-card form { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+input { background: var(--ide-bg); color: var(--ide-text); border: 1px solid var(--ide-border); padding: 10px; border-radius: 5px; font: inherit; }
+.dashboard-actions { display: flex; gap: 8px; }
+.dashboard-actions button, .recent-project button, .workspace-header button { padding: 8px 12px; background: var(--ide-bg-elevated); border: 1px solid var(--ide-border); border-radius: 5px; cursor: pointer; }
+.recent-project { display: flex; gap: 8px; margin: 10px 0; }
+.recent-project > button:first-child { flex: 1; text-align: left; min-width: 0; }
+.recent-project span { display: block; margin-top: 6px; color: var(--ide-text-muted); overflow-wrap: anywhere; }
+.workspace-view { height: 100vh; display: flex; flex-direction: column; }
+.workspace-header { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--ide-border); background: var(--ide-bg-panel); }
+.workspace-header span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ide-text-muted); }
+.workspace-view .app-shell { flex: 1; height: auto; min-height: 0; }
+.app-shell.with-preview { grid-template-columns: 220px minmax(240px, 1fr) minmax(280px, 1fr); }
+.preview-panel { grid-column: 3; grid-row: 1 / -1; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--ide-border); }
+.preview-panel p { padding: 0 12px; color: var(--ide-text-muted); line-height: 1.5; }
+.preview-panel iframe { flex: 1; width: 100%; border: 0; background: white; }
+.preview-panel input { width: 85px; padding: 4px; }
+.preview-panel .pane-toolbar { align-items: center; }
+.preview-panel a { color: var(--ide-accent); white-space: nowrap; }
+.folder-picker { width: min(620px, 90vw); max-height: 85vh; overflow: auto; padding: 24px; background: var(--ide-bg-panel); color: var(--ide-text); border: 1px solid var(--ide-border); border-radius: 12px; }
+.folder-picker::backdrop { background: #0009; }
+.folder-location { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.folder-location label { width: 100%; }
+.folder-location input { flex: 1; min-width: 0; }
+.folder-picker button:not(.button-primary) { background: var(--ide-bg-elevated); color: var(--ide-text); border: 1px solid var(--ide-border); border-radius: 4px; padding: 8px 12px; cursor: pointer; }
+.folder-options { min-height: 100px; max-height: 250px; overflow: auto; display: flex; flex-direction: column; gap: 4px; margin: 16px 0; }
+.folder-options button { text-align: left; }
+.project-name { display: flex; flex-direction: column; gap: 8px; }
+.folder-picker .project-path { overflow-wrap: anywhere; }
+
+.app-shell.without-terminal { grid-template-rows: minmax(0, 1fr); }
+.terminal-section[hidden] { display: none; }

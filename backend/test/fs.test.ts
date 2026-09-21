@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -48,5 +48,26 @@ describe('WorkspaceFs.watch', () => {
     await sleep(300);
     unsubscribe();
     expect(events.some((e) => e.path === 'hello.txt' && e.kind === 'change')).toBe(true);
+  });
+});
+
+describe('workspace mutations', () => {
+  it('creates, renames and deletes nested files without overwriting existing files', async () => {
+    await fs.create('src', true);
+    await fs.create('src/a.ts', false);
+    await fs.write('src/a.ts', 'const a = 1');
+    await fs.rename('src/a.ts', 'src/b.ts');
+    expect(await fs.read('src/b.ts')).toBe('const a = 1');
+    await expect(fs.create('src/b.ts', false)).rejects.toThrow();
+    await expect(fs.rename('hello.txt', 'src/b.ts')).rejects.toThrow();
+    await expect(fs.delete('src')).rejects.toThrow();
+    await fs.delete('src/b.ts');
+    await fs.delete('src');
+    await expect(fs.delete('.')).rejects.toThrow();
+  });
+  it('rejects symlinks outside the workspace', async () => {
+    await symlink(tmpdir(), path.join(root, 'outside'));
+    await expect(fs.list('outside')).rejects.toThrow(PathEscapeError);
+    await expect(fs.create('outside/yotram-escape.txt', false)).rejects.toThrow(PathEscapeError);
   });
 });

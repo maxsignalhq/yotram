@@ -25,6 +25,17 @@ export function Terminal({ client, sessionId, theme = 'dark' }: { client: WsClie
     client.send({ type: 'pty:create', sessionId, cols: term.cols, rows: term.rows });
 
     let exited = false;
+    const unsubscribeStatus = client.onStatusChange?.(status => {
+      if (status === 'closed') { exited = true; term.write('\r\nConnection lost. Shell ended.\r\n'); }
+      if (status === 'open') { exited = false; client.send({ type: 'pty:create', sessionId, cols: term.cols, rows: term.rows }); }
+    });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      if (!containerRef.current?.clientWidth) return;
+      fitAddon.fit();
+      client.send({ type: 'pty:resize', sessionId, cols: term.cols, rows: term.rows });
+    });
+    if (containerRef.current) observer?.observe(containerRef.current);
+
 
     const unsubData = client.on('pty:data', (msg) => {
       if (msg.sessionId === sessionId) term.write(msg.data);
@@ -41,6 +52,9 @@ export function Terminal({ client, sessionId, theme = 'dark' }: { client: WsClie
     });
 
     return () => {
+      observer?.disconnect();
+      unsubscribeStatus?.();
+      client.send({ type: 'pty:kill', sessionId });
       unsubData();
       unsubExit();
       term.dispose();

@@ -3,31 +3,56 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
+import { Workspaces } from './workspaces.js';
 import { WorkspaceFs } from './fs.js';
 import { PtyManager } from './pty.js';
 import { isClientMessage, ServerMessage } from './protocol.js';
 
 export function createServer(rootDir: string): { httpServer: http.Server; close: () => void } {
   const app = express();
+  const workspaces = new Workspaces(rootDir);
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && origin !== `http://${req.headers.host}`) { res.status(403).json({ error: 'Origin not allowed' }); return; }
+    next();
+  });
+  app.use(express.json({ limit: '16kb' }));
+  app.get('/api/workspaces/default', (_req, res) => res.json(workspaces.get('local')));
+  app.get('/api/folders', async (req, res) => {
+    try { res.json(await workspaces.browse(req.query.path)); }
+    catch (error) { res.status(400).json({ error: (error as Error).message }); }
+  });
+  app.post('/api/workspaces', async (req, res) => {
+    try { res.json(await workspaces.open(req.body?.path, req.body?.create === true)); }
+    catch (error) { res.status(400).json({ error: (error as Error).message }); }
+  });
   const frontendDist = path.resolve(fileURLToPath(import.meta.url), '../../../frontend/dist');
   app.use(express.static(frontendDist));
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ server: httpServer });
-  const workspaceFs = new WorkspaceFs(rootDir);
-  const ptyManager = new PtyManager();
-
-  const unwatch = workspaceFs.watch((event) => {
-    broadcast({ type: 'fs:watch-event', path: event.path, kind: event.kind });
-  });
-
-  function broadcast(msg: ServerMessage): void {
-    const payload = JSON.stringify(msg);
+  const managers = new Set<PtyManager>();
+  const roots = new Map<WebSocket, string>();
+  const watches = new Set<() => void>();
+  function broadcast(msg: ServerMessage, directory: string): void {
     for (const client of wss.clients) {
-      if (client.readyState === WebSocket.OPEN) client.send(payload);
+      if (roots.get(client) === directory && client.readyState === WebSocket.OPEN) client.send(JSON.stringify(msg));
     }
   }
-
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, request) => {
+    const origin = request.headers.origin;
+    if (origin && origin !== `http://${request.headers.host}`) { ws.close(1008, 'Origin not allowed'); return; }
+    const id = new URL(request.url ?? '/', 'http://localhost').searchParams.get('workspace') ?? 'local';
+    const workspace = workspaces.get(id);
+    if (!workspace) { ws.close(1008, 'Unknown workspace'); return; }
+    const workspaceFs = new WorkspaceFs(workspace.path);
+    roots.set(ws, workspace.path);
+    const unwatch = workspaceFs.watch(event => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'fs:watch-event', ...event }));
+    });
+    watches.add(unwatch);
+    const ptyManager = new PtyManager(workspace.path);
+    managers.add(ptyManager);
+    ws.on('close', () => { unwatch(); watches.delete(unwatch); roots.delete(ws); ptyManager.dispose(); managers.delete(ptyManager); });
     ws.on('message', async (raw) => {
       let parsed: unknown;
       try {
@@ -38,6 +63,16 @@ export function createServer(rootDir: string): { httpServer: http.Server; close:
       if (!isClientMessage(parsed)) return;
 
       switch (parsed.type) {
+        case 'pty:kill': ptyManager.kill(parsed.sessionId); break;
+        case 'fs:create': case 'fs:rename': case 'fs:delete': {
+          try {
+            if (parsed.type === 'fs:create') await workspaceFs.create(parsed.path, parsed.directory);
+            if (parsed.type === 'fs:rename') await workspaceFs.rename(parsed.path, parsed.destination);
+            if (parsed.type === 'fs:delete') await workspaceFs.delete(parsed.path);
+            broadcast({ type: 'fs:updated', path: parsed.path, operation: parsed.type.slice(3) as 'create' | 'rename' | 'delete', ...(parsed.type === 'fs:rename' ? { destination: parsed.destination } : {}) }, workspace.path);
+          } catch (err) { ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message })); }
+          break;
+        }
         case 'fs:list': {
           try {
             const entries = await workspaceFs.list(parsed.path);
@@ -59,19 +94,22 @@ export function createServer(rootDir: string): { httpServer: http.Server; close:
         case 'fs:write': {
           try {
             await workspaceFs.write(parsed.path, parsed.content);
+            ws.send(JSON.stringify({ type: 'fs:saved', path: parsed.path, content: parsed.content }));
           } catch (err) {
             ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message }));
           }
           break;
         }
         case 'pty:create': {
-          ptyManager.create(
+          try { ptyManager.create(
             parsed.sessionId,
             parsed.cols,
             parsed.rows,
-            (data) => ws.send(JSON.stringify({ type: 'pty:data', sessionId: parsed.sessionId, data })),
-            (exitCode) => ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode })),
-          );
+            (data) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:data', sessionId: parsed.sessionId, data })); },
+            (exitCode) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode })); },
+          ); } catch {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode: 1 }));
+          }
           break;
         }
         case 'pty:data': {
@@ -89,7 +127,9 @@ export function createServer(rootDir: string): { httpServer: http.Server; close:
   return {
     httpServer,
     close: () => {
-      unwatch();
+      for (const unwatch of watches) unwatch();
+      for (const manager of managers) manager.dispose();
+      for (const client of wss.clients) client.terminate();
       wss.close();
       httpServer.close();
     },

@@ -37,68 +37,94 @@ self.MonacoEnvironment = {
   },
 };
 
-export function Editor({ client, path, theme = 'dark' }: { client: WsClient; path: string | null; theme?: Theme }) {
-  const [content, setContent] = useState('');
-  const [savedContent, setSavedContent] = useState('');
-  const [conflict, setConflict] = useState(false);
-
-  // Refs mirror the latest state so the fs:watch-event handler (registered once
-  // per path in the effect below) never reads stale closed-over values.
-  const contentRef = useRef(content);
-  const savedContentRef = useRef(savedContent);
-  useEffect(() => { contentRef.current = content; }, [content]);
-  useEffect(() => { savedContentRef.current = savedContent; }, [savedContent]);
-
+interface Document { content: string; saved: string; conflict: boolean; loaded: boolean }
+export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = 'dark' }: { client: WsClient; path: string | null; openVersion?: number; onDirtyChange?: (dirty: boolean) => void; theme?: Theme }) {
+  const [documents, setDocuments] = useState<Record<string, Document>>({});
+  const [active, setActive] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => { onDirtyChange?.(Object.values(documents).some(doc => doc.content !== doc.saved)); }, [documents, onDirtyChange]);
+  const docs = useRef(documents);
+  docs.current = documents;
+  useEffect(() => {
+    const subscriptions = [
+      client.on('fs:read', msg => setDocuments(previous => {
+        const old = previous[msg.path];
+        if (!old) return previous;
+        if (old.loaded && old.content !== old.saved) return { ...previous, [msg.path]: { ...old, conflict: old.saved !== msg.content } };
+        return { ...previous, [msg.path]: { content: msg.content, saved: msg.content, conflict: false, loaded: true } };
+      })),
+      client.on('fs:saved', msg => { setError(''); setDocuments(previous => previous[msg.path] ? { ...previous, [msg.path]: { ...previous[msg.path], saved: msg.content, conflict: false } } : previous); }),
+      client.on('fs:error', msg => setError(`${msg.path}: ${msg.message}`)),
+      client.on('fs:watch-event', msg => {
+        const doc = docs.current[msg.path];
+        if (!doc) return;
+        if (doc.content !== doc.saved) setDocuments(previous => ({ ...previous, [msg.path]: { ...previous[msg.path], conflict: true } }));
+        else if (msg.kind !== 'unlink') client.send({ type: 'fs:read', path: msg.path });
+      }),
+      client.on('fs:updated', msg => {
+        if (msg.operation === 'create') return;
+        setDocuments(previous => {
+          const next = { ...previous };
+          for (const name of Object.keys(previous)) {
+            if (name !== msg.path && !name.startsWith(msg.path + '/')) continue;
+            if (msg.destination) {
+              const destination = msg.destination + name.slice(msg.path.length);
+              next[destination] = previous[name];
+              setActive(current => current === name ? destination : current);
+              delete next[name];
+            } else next[name] = { ...previous[name], conflict: true };
+          }
+          return next;
+        });
+      }),
+    ];
+    const status = client.onStatusChange?.(value => {
+      if (value === 'open') for (const name of Object.keys(docs.current)) client.send({ type: 'fs:read', path: name });
+    });
+    return () => { subscriptions.forEach(unsubscribe => unsubscribe()); status?.(); };
+  }, [client]);
   useEffect(() => {
     if (!path) return;
-    const unsubRead = client.on('fs:read', (msg) => {
-      if (msg.path === path) {
-        setContent(msg.content);
-        setSavedContent(msg.content);
-        setConflict(false);
-      }
-    });
-    const unsubWatch = client.on('fs:watch-event', (msg) => {
-      if (msg.path === path && msg.kind === 'change' && contentRef.current !== savedContentRef.current) {
-        setConflict(true);
-      }
-    });
-    client.send({ type: 'fs:read', path });
-    return () => { unsubRead(); unsubWatch(); };
-  }, [client, path]);
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault();
-        if (path) {
-          client.send({ type: 'fs:write', path, content });
-          setSavedContent(content);
-        }
-      }
+    setActive(path);
+    if (!docs.current[path]) {
+      setDocuments(previous => ({ ...previous, [path]: { content: '', saved: '', conflict: false, loaded: false } }));
+      client.send({ type: 'fs:read', path });
     }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [client, path, content]);
-
-  if (!path) return <div className="editor-pane editor-empty">No file open</div>;
-
-  return (
-    <div className="editor-pane">
-      {conflict && (
-        <div role="alert" className="editor-conflict">
-          file changed on disk — reload or keep mine?
-          <button onClick={() => { client.send({ type: 'fs:read', path }); setConflict(false); }}>Reload</button>
-          <button onClick={() => setConflict(false)}>Keep mine</button>
-        </div>
-      )}
-      <div className="editor-monaco-wrapper">
-        <MonacoEditor
-          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
-          value={content}
-          onChange={(value: string | undefined) => setContent(value ?? '')}
-        />
-      </div>
+  }, [client, path, openVersion]);
+  const save = () => {
+    if (active && documents[active]?.loaded) client.send({ type: 'fs:write', path: active, content: documents[active].content });
+  };
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') { event.preventDefault(); save(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  });
+  const doc = active ? documents[active] : undefined;
+  return <div className="editor-pane">
+    <div className="pane-toolbar" role="tablist" aria-label="Open files">
+      {Object.entries(documents).map(([name, item]) => <span key={name} className="editor-tab">
+        <button role="tab" aria-selected={active === name} onClick={() => setActive(name)}>{name}{item.content !== item.saved ? ' •' : ''}</button>
+        <button aria-label={`Close ${name}`} onClick={() => {
+          if (item.content !== item.saved && !window.confirm(`Discard unsaved changes in ${name}?`)) return;
+          const next = { ...documents }; delete next[name]; setDocuments(next);
+          if (active === name) setActive(Object.keys(next).at(-1) ?? null);
+        }}>×</button>
+      </span>)}
+      <button onClick={save} disabled={!doc?.loaded}>Save</button>
     </div>
-  );
+    {error && <div role="alert" className="editor-conflict">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
+    {doc?.conflict && <div role="alert" className="editor-conflict">file changed on disk — reload or keep mine?
+      <button onClick={() => {
+        if (!active) return;
+        setDocuments(previous => ({ ...previous, [active]: { ...previous[active], saved: previous[active].content, conflict: false } }));
+        client.send({ type: 'fs:read', path: active });
+      }}>Reload</button>
+      <button onClick={() => active && setDocuments(previous => ({ ...previous, [active]: { ...previous[active], conflict: false } }))}>Keep mine</button>
+    </div>}
+    {active && doc?.loaded ? <div className="editor-monaco-wrapper"><MonacoEditor path={active} theme={theme === 'dark' ? 'vs-dark' : 'vs'} value={doc.content}
+      options={{ automaticLayout: true }} onChange={value => setDocuments(previous => ({ ...previous, [active]: { ...previous[active], content: value ?? '' } }))} /></div>
+      : <div className="editor-empty">{active ? 'Loading file…' : 'Select a file to start editing'}</div>}
+  </div>;
 }

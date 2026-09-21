@@ -6,6 +6,10 @@ export interface PtyDataMessage { type: 'pty:data'; sessionId: string; data: str
 export interface PtyResizeMessage { type: 'pty:resize'; sessionId: string; cols: number; rows: number }
 
 export type ClientMessage =
+  | { type: 'fs:create'; path: string; directory: boolean }
+  | { type: 'fs:rename'; path: string; destination: string }
+  | { type: 'fs:delete'; path: string }
+  | { type: 'pty:kill'; sessionId: string }
   | FsListMessage
   | FsReadMessage
   | FsWriteMessage
@@ -21,6 +25,8 @@ export interface PtyDataResultMessage { type: 'pty:data'; sessionId: string; dat
 export interface PtyExitMessage { type: 'pty:exit'; sessionId: string; exitCode: number }
 
 export type ServerMessage =
+  | { type: 'fs:saved'; path: string; content: string }
+  | { type: 'fs:updated'; path: string; destination?: string; operation: 'create' | 'rename' | 'delete' }
   | FsListResultMessage
   | FsReadResultMessage
   | FsWatchEventMessage
@@ -28,16 +34,19 @@ export type ServerMessage =
   | PtyDataResultMessage
   | PtyExitMessage;
 
-const CLIENT_MESSAGE_TYPES = new Set([
-  'fs:list', 'fs:read', 'fs:write', 'pty:create', 'pty:data', 'pty:resize',
-]);
-
 export function isClientMessage(x: unknown): x is ClientMessage {
-  return (
-    typeof x === 'object' &&
-    x !== null &&
-    'type' in x &&
-    typeof (x as { type: unknown }).type === 'string' &&
-    CLIENT_MESSAGE_TYPES.has((x as { type: string }).type)
-  );
+  if (!x || typeof x !== 'object') return false;
+  const m = x as Record<string, unknown>;
+  const str = (key: string) => typeof m[key] === 'string';
+  const size = (key: string) => Number.isInteger(m[key]) && Number(m[key]) > 0 && Number(m[key]) <= 1000;
+  switch (m.type) {
+    case 'fs:list': case 'fs:read': case 'fs:delete': return str('path');
+    case 'fs:write': return str('path') && str('content');
+    case 'fs:create': return str('path') && typeof m.directory === 'boolean';
+    case 'fs:rename': return str('path') && str('destination');
+    case 'pty:create': case 'pty:resize': return str('sessionId') && size('cols') && size('rows');
+    case 'pty:data': return str('sessionId') && str('data');
+    case 'pty:kill': return str('sessionId');
+    default: return false;
+  }
 }

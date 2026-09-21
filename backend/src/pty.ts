@@ -6,6 +6,10 @@ interface Session {
 }
 
 export class PtyManager {
+  constructor(private readonly cwd = process.cwd()) {}
+
+  dispose(): void { for (const id of this.sessions.keys()) this.kill(id); }
+
   private sessions = new Map<string, Session>();
 
   create(
@@ -15,17 +19,18 @@ export class PtyManager {
     onData: (data: string) => void,
     onExit: (exitCode: number) => void,
   ): void {
+    this.kill(sessionId);
     const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL ?? '/bin/bash');
     const proc = pty.spawn(shell, [], {
       name: 'xterm-color',
       cols,
       rows,
-      cwd: process.cwd(),
+      cwd: this.cwd,
       env: process.env as Record<string, string>,
     });
     proc.onData(onData);
     proc.onExit(({ exitCode }) => {
-      this.sessions.delete(sessionId);
+      if (this.sessions.get(sessionId)?.proc === proc) this.sessions.delete(sessionId);
       onExit(exitCode);
     });
     this.sessions.set(sessionId, { proc });

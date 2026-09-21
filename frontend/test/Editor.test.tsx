@@ -56,3 +56,19 @@ describe('Editor', () => {
     expect(screen.getByText(/file changed on disk/i)).toBeTruthy();
   });
 });
+
+it('preserves unsaved edits across tabs and only marks saved after acknowledgement', () => {
+  const client = fakeClient();
+  const { rerender } = render(<Editor client={client as unknown as WsClient} path="a.txt" />);
+  client.emit({ type: 'fs:read', path: 'a.txt', content: 'original' });
+  fireEvent.change(screen.getByTestId('monaco-stub'), { target: { value: 'edited' } });
+  rerender(<Editor client={client as unknown as WsClient} path="b.txt" />);
+  client.emit({ type: 'fs:read', path: 'b.txt', content: 'second' });
+  fireEvent.click(screen.getByRole('tab', { name: 'a.txt •' }));
+  expect((screen.getByTestId('monaco-stub') as HTMLTextAreaElement).value).toBe('edited');
+  fireEvent.click(screen.getByText('Save'));
+  expect(screen.getByRole('tab', { name: 'a.txt •' })).toBeTruthy();
+  client.emit({ type: 'fs:saved', path: 'a.txt', content: 'edited' });
+  expect(screen.getByRole('tab', { name: 'a.txt' })).toBeTruthy();
+  cleanup();
+});

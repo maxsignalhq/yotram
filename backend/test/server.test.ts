@@ -45,3 +45,21 @@ describe('server WebSocket protocol', () => {
     ws.close();
   });
 });
+
+it('routes connections to their own local project and blocks foreign origins', async () => {
+  const response = await fetch(`http://127.0.0.1:${port}/api/workspaces`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: 'second', create: true }),
+  });
+  const workspace = await response.json() as { id: string };
+  expect(response.status).toBe(200);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/?workspace=${workspace.id}`);
+  await new Promise<void>(resolve => ws.on('open', resolve));
+  const message = new Promise<any>(resolve => ws.once('message', raw => resolve(JSON.parse(raw.toString()))));
+  ws.send(JSON.stringify({ type: 'fs:read', path: 'a.txt' }));
+  expect((await message).type).toBe('fs:error');
+  ws.close();
+  const denied = await fetch(`http://127.0.0.1:${port}/api/workspaces`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:3000' }, body: JSON.stringify({ path: root }),
+  });
+  expect(denied.status).toBe(403);
+});
