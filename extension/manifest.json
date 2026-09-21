@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Yotram",
+  "version": "1.0.0",
+  "description": "One-click access to your local Yotram IDE.",
+  "action": {},
+  "background": { "service_worker": "background.js" },
+  "options_page": "options.html",
+  "options_ui": { "open_in_tab": true },
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["http://*/*"]
+}

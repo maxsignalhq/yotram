@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Yotram — Settings</title>
+  <style>
+    body { font-family: sans-serif; max-width: 360px; margin: 40px auto; }
+    label { display: block; margin-bottom: 8px; }
+    input { width: 100%; padding: 6px; box-sizing: border-box; }
+    #status { color: green; }
+  </style>
+</head>
+<body>
+  <h1>Yotram settings</h1>
+  <form id="settings">
+    <label for="url">Yotram server URL (on your home network)</label>
+    <input id="url" type="url" placeholder="http://192.168.1.42:4287" required />
+    <button type="submit">Save</button>
+  </form>
+  <p id="status" role="status"></p>
+  <script src="options.js"></script>
+</body>
+</html>
