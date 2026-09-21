@@ -91,7 +91,11 @@ describe('listClaudeSessions', () => {
       await new Promise(resolve => setTimeout(resolve, 5));
     }
     const sessions = await listClaudeSessions(workspacePath, claudeProjectsDir);
-    expect(sessions.length).toBeLessThanOrEqual(20);
+    expect(sessions).toHaveLength(20);
+    // Newest first: index 24 was written last (most recent mtime), and the
+    // 5 oldest (indices 0-4) must be dropped by the cap.
+    expect(sessions[0].id).toBe('00000024-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    expect(sessions.at(-1)!.id).toBe('00000005-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   });
 });
 

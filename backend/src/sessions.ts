@@ -70,13 +70,21 @@ export async function listClaudeSessions(
   // LAST ai-title line), so it can't early-exit the way the Codex scan can.
   // To keep this bounded on a heavy user's history, stat every candidate
   // first (cheap), sort by recency, and only extract titles for the newest
-  // CLAUDE_MATCH_LIMIT files.
-  const candidates: { entry: string; filePath: string; mtimeMs: number }[] = [];
+  // CLAUDE_MATCH_LIMIT VALID files. Ids are validated before slicing (like
+  // Codex validates before counting toward its match limit) so that a
+  // handful of bogus/malicious filenames among the newest entries can't
+  // push every legitimate older session out of the bound.
+  const candidates: { id: string; filePath: string; mtimeMs: number }[] = [];
   for (const entry of entries) {
+    const id = entry.slice(0, -'.jsonl'.length);
+    // The id is derived directly from a filename in ~/.claude/projects/,
+    // which an attacker (or a corrupted/synced/restored directory) fully
+    // controls, and it later reaches a real shell — see SESSION_ID_PATTERN.
+    if (!SESSION_ID_PATTERN.test(id)) continue;
     const filePath = path.join(dir, entry);
     try {
       const stats = await stat(filePath);
-      candidates.push({ entry, filePath, mtimeMs: stats.mtimeMs });
+      candidates.push({ id, filePath, mtimeMs: stats.mtimeMs });
     } catch {
       // Skip a file we can't stat rather than failing the whole list.
     }
@@ -85,14 +93,9 @@ export async function listClaudeSessions(
 
   const sessions: Session[] = [];
   for (const candidate of candidates.slice(0, CLAUDE_MATCH_LIMIT)) {
-    const id = candidate.entry.slice(0, -'.jsonl'.length);
-    // The id is derived directly from a filename in ~/.claude/projects/,
-    // which an attacker (or a corrupted/synced/restored directory) fully
-    // controls, and it later reaches a real shell — see SESSION_ID_PATTERN.
-    if (!SESSION_ID_PATTERN.test(id)) continue;
     try {
       const title = await findLastClaudeTitle(candidate.filePath);
-      sessions.push({ id, agent: 'claude', title: title ?? '(untitled session)', updatedAt: candidate.mtimeMs });
+      sessions.push({ id: candidate.id, agent: 'claude', title: title ?? '(untitled session)', updatedAt: candidate.mtimeMs });
     } catch {
       // Skip a file we can't read rather than failing the whole list.
     }
