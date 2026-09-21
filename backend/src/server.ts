@@ -7,6 +7,7 @@ import { Workspaces } from './workspaces.js';
 import { WorkspaceFs } from './fs.js';
 import { PtyManager } from './pty.js';
 import { Git } from './git.js';
+import { listSessions } from './sessions.js';
 import { isClientMessage, ServerMessage } from './protocol.js';
 import { Auth, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from './auth.js';
 
@@ -139,6 +140,15 @@ export function createServer(rootDir: string, options: { password: string }): { 
   });
   app.post('/api/workspaces', async (req, res) => {
     try { res.json(await workspaces.open(req.body?.path, req.body?.create === true)); }
+    catch (error) { res.status(400).json({ error: (error as Error).message }); }
+  });
+  app.get('/api/sessions', async (req, res) => {
+    const { path: workspacePath } = req.query;
+    if (typeof workspacePath !== 'string' || !workspacePath.trim()) {
+      res.status(400).json({ error: 'Query parameter "path" is required' });
+      return;
+    }
+    try { res.json(await listSessions(workspacePath)); }
     catch (error) { res.status(400).json({ error: (error as Error).message }); }
   });
   const frontendDist = path.resolve(fileURLToPath(import.meta.url), '../../../frontend/dist');
