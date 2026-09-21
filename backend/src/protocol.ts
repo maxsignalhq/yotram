@@ -4,6 +4,13 @@ export interface FsWriteMessage { type: 'fs:write'; path: string; content: strin
 export interface PtyCreateMessage { type: 'pty:create'; sessionId: string; cols: number; rows: number }
 export interface PtyDataMessage { type: 'pty:data'; sessionId: string; data: string }
 export interface PtyResizeMessage { type: 'pty:resize'; sessionId: string; cols: number; rows: number }
+export interface GitStatusMessage { type: 'git:status' }
+export interface GitDiffMessage { type: 'git:diff'; path: string; staged: boolean }
+export interface GitStageMessage { type: 'git:stage'; path: string }
+export interface GitUnstageMessage { type: 'git:unstage'; path: string }
+export interface GitCommitMessage { type: 'git:commit'; message: string }
+export interface GitBranchesMessage { type: 'git:branches' }
+export interface GitCheckoutMessage { type: 'git:checkout'; name: string }
 
 export type ClientMessage =
   | { type: 'fs:create'; path: string; directory: boolean }
@@ -15,7 +22,14 @@ export type ClientMessage =
   | FsWriteMessage
   | PtyCreateMessage
   | PtyDataMessage
-  | PtyResizeMessage;
+  | PtyResizeMessage
+  | GitStatusMessage
+  | GitDiffMessage
+  | GitStageMessage
+  | GitUnstageMessage
+  | GitCommitMessage
+  | GitBranchesMessage
+  | GitCheckoutMessage;
 
 export interface FsListResultMessage { type: 'fs:list'; path: string; entries: { name: string; isDirectory: boolean }[] }
 export interface FsReadResultMessage { type: 'fs:read'; path: string; content: string }
@@ -23,6 +37,10 @@ export interface FsWatchEventMessage { type: 'fs:watch-event'; path: string; kin
 export interface FsErrorMessage { type: 'fs:error'; path: string; message: string }
 export interface PtyDataResultMessage { type: 'pty:data'; sessionId: string; data: string }
 export interface PtyExitMessage { type: 'pty:exit'; sessionId: string; exitCode: number }
+export interface GitStatusResultMessage { type: 'git:status'; isRepo: boolean; branch: string | null; staged: string[]; unstaged: string[]; untracked: string[] }
+export interface GitDiffResultMessage { type: 'git:diff'; path: string; staged: boolean; before: string; after: string }
+export interface GitBranchesResultMessage { type: 'git:branches'; branches: { name: string; current: boolean }[] }
+export interface GitErrorMessage { type: 'git:error'; message: string }
 
 export type ServerMessage =
   | { type: 'fs:saved'; path: string; content: string }
@@ -32,7 +50,11 @@ export type ServerMessage =
   | FsWatchEventMessage
   | FsErrorMessage
   | PtyDataResultMessage
-  | PtyExitMessage;
+  | PtyExitMessage
+  | GitStatusResultMessage
+  | GitDiffResultMessage
+  | GitBranchesResultMessage
+  | GitErrorMessage;
 
 export function isClientMessage(x: unknown): x is ClientMessage {
   if (!x || typeof x !== 'object') return false;
@@ -47,6 +69,11 @@ export function isClientMessage(x: unknown): x is ClientMessage {
     case 'pty:create': case 'pty:resize': return str('sessionId') && size('cols') && size('rows');
     case 'pty:data': return str('sessionId') && str('data');
     case 'pty:kill': return str('sessionId');
+    case 'git:status': case 'git:branches': return true;
+    case 'git:diff': return str('path') && typeof m.staged === 'boolean';
+    case 'git:stage': case 'git:unstage': return str('path');
+    case 'git:commit': return str('message');
+    case 'git:checkout': return str('name');
     default: return false;
   }
 }
