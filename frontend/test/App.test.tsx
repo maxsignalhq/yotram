@@ -59,10 +59,14 @@ class FakeNotification {
 // without driving the real Dashboard UI.
 vi.mock('../src/components/Dashboard', async () => {
   const actual = await vi.importActual<any>('../src/components/Dashboard');
+  const { useEffect } = await vi.importActual<any>('react');
   return {
     ...actual,
     Dashboard: ({ onOpen }: { onOpen: (w: any) => void }) => {
-      onOpen({ id: 'w1', name: 'demo', path: '/tmp/demo' });
+      // Call onOpen from an effect, not during render, to avoid React's
+      // "Cannot update a component while rendering a different component"
+      // warning (setState-in-render from App's setWorkspace).
+      useEffect(() => { onOpen({ id: 'w1', name: 'demo', path: '/tmp/demo' }); }, []);
       return null;
     },
   };
