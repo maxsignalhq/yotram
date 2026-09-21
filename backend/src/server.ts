@@ -17,7 +17,9 @@ function parseCookies(header: string | undefined): Record<string, string> {
     if (index === -1) continue;
     const key = part.slice(0, index).trim();
     const value = part.slice(index + 1).trim();
-    if (key) result[key] = decodeURIComponent(value);
+    if (!key) continue;
+    try { result[key] = decodeURIComponent(value); }
+    catch { result[key] = value; }
   }
   return result;
 }
@@ -91,6 +93,15 @@ export function createServer(rootDir: string, options: { password: string }): { 
   });
   const frontendDist = path.resolve(fileURLToPath(import.meta.url), '../../../frontend/dist');
   app.use(express.static(frontendDist));
+  // Terminal error handler: must be registered last, after all routes and
+  // static serving, and must take 4 args for Express to treat it as an
+  // error handler. Never leak err.stack or other error detail to clients.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error('Unhandled Express error:', err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: 'Internal server error' });
+  });
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ server: httpServer });
   const managers = new Set<PtyManager>();
@@ -102,91 +113,102 @@ export function createServer(rootDir: string, options: { password: string }): { 
     }
   }
   wss.on('connection', (ws, request) => {
-    const cookies = parseCookies(request.headers.cookie);
-    if (!auth.verifySessionToken(cookies[SESSION_COOKIE_NAME])) { ws.close(1008, 'Unauthorized'); return; }
-    const origin = request.headers.origin;
-    if (origin && origin !== `http://${request.headers.host}`) { ws.close(1008, 'Origin not allowed'); return; }
-    const id = new URL(request.url ?? '/', 'http://localhost').searchParams.get('workspace') ?? 'local';
-    const workspace = workspaces.get(id);
-    if (!workspace) { ws.close(1008, 'Unknown workspace'); return; }
-    const workspaceFs = new WorkspaceFs(workspace.path);
-    roots.set(ws, workspace.path);
-    const unwatch = workspaceFs.watch(event => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'fs:watch-event', ...event }));
-    });
-    watches.add(unwatch);
-    const ptyManager = new PtyManager(workspace.path);
-    managers.add(ptyManager);
-    ws.on('close', () => { unwatch(); watches.delete(unwatch); roots.delete(ws); ptyManager.dispose(); managers.delete(ptyManager); });
-    ws.on('message', async (raw) => {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw.toString());
-      } catch {
-        return;
-      }
-      if (!isClientMessage(parsed)) return;
+    try {
+      const cookies = parseCookies(request.headers.cookie);
+      if (!auth.verifySessionToken(cookies[SESSION_COOKIE_NAME])) { ws.close(1008, 'Unauthorized'); return; }
+      const origin = request.headers.origin;
+      if (origin && origin !== `http://${request.headers.host}`) { ws.close(1008, 'Origin not allowed'); return; }
+      const id = new URL(request.url ?? '/', 'http://localhost').searchParams.get('workspace') ?? 'local';
+      const workspace = workspaces.get(id);
+      if (!workspace) { ws.close(1008, 'Unknown workspace'); return; }
+      const workspaceFs = new WorkspaceFs(workspace.path);
+      roots.set(ws, workspace.path);
+      const unwatch = workspaceFs.watch(event => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'fs:watch-event', ...event }));
+      });
+      watches.add(unwatch);
+      const ptyManager = new PtyManager(workspace.path);
+      managers.add(ptyManager);
+      ws.on('close', () => { unwatch(); watches.delete(unwatch); roots.delete(ws); ptyManager.dispose(); managers.delete(ptyManager); });
+      ws.on('message', async (raw) => {
+        try {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(raw.toString());
+          } catch {
+            return;
+          }
+          if (!isClientMessage(parsed)) return;
 
-      switch (parsed.type) {
-        case 'pty:kill': ptyManager.kill(parsed.sessionId); break;
-        case 'fs:create': case 'fs:rename': case 'fs:delete': {
-          try {
-            if (parsed.type === 'fs:create') await workspaceFs.create(parsed.path, parsed.directory);
-            if (parsed.type === 'fs:rename') await workspaceFs.rename(parsed.path, parsed.destination);
-            if (parsed.type === 'fs:delete') await workspaceFs.delete(parsed.path);
-            broadcast({ type: 'fs:updated', path: parsed.path, operation: parsed.type.slice(3) as 'create' | 'rename' | 'delete', ...(parsed.type === 'fs:rename' ? { destination: parsed.destination } : {}) }, workspace.path);
-          } catch (err) { ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message })); }
-          break;
-        }
-        case 'fs:list': {
-          try {
-            const entries = await workspaceFs.list(parsed.path);
-            ws.send(JSON.stringify({ type: 'fs:list', path: parsed.path, entries }));
-          } catch (err) {
-            ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message }));
+          switch (parsed.type) {
+            case 'pty:kill': ptyManager.kill(parsed.sessionId); break;
+            case 'fs:create': case 'fs:rename': case 'fs:delete': {
+              try {
+                if (parsed.type === 'fs:create') await workspaceFs.create(parsed.path, parsed.directory);
+                if (parsed.type === 'fs:rename') await workspaceFs.rename(parsed.path, parsed.destination);
+                if (parsed.type === 'fs:delete') await workspaceFs.delete(parsed.path);
+                broadcast({ type: 'fs:updated', path: parsed.path, operation: parsed.type.slice(3) as 'create' | 'rename' | 'delete', ...(parsed.type === 'fs:rename' ? { destination: parsed.destination } : {}) }, workspace.path);
+              } catch (err) { ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message })); }
+              break;
+            }
+            case 'fs:list': {
+              try {
+                const entries = await workspaceFs.list(parsed.path);
+                ws.send(JSON.stringify({ type: 'fs:list', path: parsed.path, entries }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'fs:read': {
+              try {
+                const content = await workspaceFs.read(parsed.path);
+                ws.send(JSON.stringify({ type: 'fs:read', path: parsed.path, content }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'fs:write': {
+              try {
+                await workspaceFs.write(parsed.path, parsed.content);
+                ws.send(JSON.stringify({ type: 'fs:saved', path: parsed.path, content: parsed.content }));
+              } catch (err) {
+                ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message }));
+              }
+              break;
+            }
+            case 'pty:create': {
+              try { ptyManager.create(
+                parsed.sessionId,
+                parsed.cols,
+                parsed.rows,
+                (data) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:data', sessionId: parsed.sessionId, data })); },
+                (exitCode) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode })); },
+              ); } catch {
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode: 1 }));
+              }
+              break;
+            }
+            case 'pty:data': {
+              ptyManager.write(parsed.sessionId, parsed.data);
+              break;
+            }
+            case 'pty:resize': {
+              ptyManager.resize(parsed.sessionId, parsed.cols, parsed.rows);
+              break;
+            }
           }
-          break;
+        } catch (err) {
+          console.error('WebSocket message handler error:', err);
+          try { ws.close(1011, 'Internal error'); } catch { /* socket may already be closed */ }
         }
-        case 'fs:read': {
-          try {
-            const content = await workspaceFs.read(parsed.path);
-            ws.send(JSON.stringify({ type: 'fs:read', path: parsed.path, content }));
-          } catch (err) {
-            ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message }));
-          }
-          break;
-        }
-        case 'fs:write': {
-          try {
-            await workspaceFs.write(parsed.path, parsed.content);
-            ws.send(JSON.stringify({ type: 'fs:saved', path: parsed.path, content: parsed.content }));
-          } catch (err) {
-            ws.send(JSON.stringify({ type: 'fs:error', path: parsed.path, message: (err as Error).message }));
-          }
-          break;
-        }
-        case 'pty:create': {
-          try { ptyManager.create(
-            parsed.sessionId,
-            parsed.cols,
-            parsed.rows,
-            (data) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:data', sessionId: parsed.sessionId, data })); },
-            (exitCode) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode })); },
-          ); } catch {
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode: 1 }));
-          }
-          break;
-        }
-        case 'pty:data': {
-          ptyManager.write(parsed.sessionId, parsed.data);
-          break;
-        }
-        case 'pty:resize': {
-          ptyManager.resize(parsed.sessionId, parsed.cols, parsed.rows);
-          break;
-        }
-      }
-    });
+      });
+    } catch (err) {
+      console.error('WebSocket connection handler error:', err);
+      try { ws.close(1011, 'Internal error'); } catch { /* socket may already be closed */ }
+      return;
+    }
   });
 
   return {

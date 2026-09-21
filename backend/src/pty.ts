@@ -21,12 +21,17 @@ export class PtyManager {
   ): void {
     this.kill(sessionId);
     const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL ?? '/bin/bash');
+    // Never expose YOTRAM_PASSWORD to shells spawned inside the IDE: if it
+    // was set via env var (rather than the config file), leaking it into
+    // every terminal's environment would let anyone with a terminal read it.
+    const env = { ...process.env };
+    delete env.YOTRAM_PASSWORD;
     const proc = pty.spawn(shell, [], {
       name: 'xterm-color',
       cols,
       rows,
       cwd: this.cwd,
-      env: process.env as Record<string, string>,
+      env: env as Record<string, string>,
     });
     proc.onData(onData);
     proc.onExit(({ exitCode }) => {

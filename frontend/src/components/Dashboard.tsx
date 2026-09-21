@@ -11,13 +11,14 @@ export function Dashboard({ onOpen }: { onOpen: (workspace: Workspace) => void }
     try { const value: unknown = JSON.parse(localStorage.getItem('yotram.projects') ?? '[]'); return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 12) : []; } catch { return []; }
   });
   useEffect(() => {
-    fetch('/api/workspaces/default').then(response => { if (!response.ok) throw new Error('Unable to connect to the project server'); return response.json(); }).then(setCurrent).catch(error => setError(error.message));
+    fetch('/api/workspaces/default').then(response => { if (response.status === 401) { window.location.reload(); return; } if (!response.ok) throw new Error('Unable to connect to the project server'); return response.json(); }).then(result => { if (result) setCurrent(result); }).catch(error => setError(error.message));
   }, []);
   function remember(paths: string[]) { setRecent(paths); try { localStorage.setItem('yotram.projects', JSON.stringify(paths)); } catch { /* Browser storage may be disabled. */ } }
   async function open(path: string, create = false) {
     setBusy(true); setError('');
     try {
       const response = await fetch('/api/workspaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, create }) });
+      if (response.status === 401) { window.location.reload(); return; }
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? 'Unable to open project');
       remember([result.path, ...recent.filter(item => item !== result.path)].slice(0, 12));

@@ -104,4 +104,50 @@ describe('authentication', () => {
     const closeCode = await new Promise<number>((resolve) => ws.on('close', (code) => resolve(code)));
     expect(closeCode).toBe(1008);
   });
+
+  it('does not crash the server on a malformed Cookie header over WebSocket, and the server keeps working afterward', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`, { headers: { Cookie: 'a=%' } });
+    const outcome = await new Promise<{ event: 'close' | 'error'; code?: number }>((resolve) => {
+      ws.on('close', (code) => resolve({ event: 'close', code }));
+      ws.on('error', () => resolve({ event: 'error' }));
+    });
+    // The malformed cookie falls back to its raw value, fails auth, and is rejected cleanly (not a crash).
+    if (outcome.event === 'close') expect(outcome.code).toBe(1008);
+
+    // Prove the process survived: a normal, authenticated request still works.
+    const response = await fetch(`http://127.0.0.1:${port}/api/workspaces/default`, { headers: { Cookie: sessionCookie } });
+    expect(response.status).toBe(200);
+  });
+
+  it('does not leak a stack trace for a GET request with a malformed Cookie header', async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/workspaces/default`, { headers: { Cookie: 'a=%' } });
+    const body = await response.text();
+    expect(response.status).toBe(401);
+    expect(body).not.toContain('at ');
+    expect(body).not.toContain('.ts:');
+    expect(body).not.toContain(process.cwd());
+  });
+
+  it('routes a thrown Express error through the terminal error handler without leaking a stack trace', async () => {
+    // Malformed JSON body makes express.json() throw a SyntaxError, which
+    // reaches next(err) and should be caught by the terminal error handler.
+    const response = await fetch(`http://127.0.0.1:${port}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{not valid json',
+    });
+    const body = await response.text();
+    expect(response.status).toBe(500);
+    expect(JSON.parse(body)).toEqual({ error: 'Internal server error' });
+    expect(body).not.toContain('at ');
+    expect(body).not.toContain('.ts:');
+    expect(body).not.toContain(process.cwd());
+  });
+
+  it('parses multiple cookies and honors a valid session cookie among others', async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/api/workspaces/default`, {
+      headers: { Cookie: `foo=bar; ${sessionCookie}; baz=qux` },
+    });
+    expect(response.status).toBe(200);
+  });
 });
