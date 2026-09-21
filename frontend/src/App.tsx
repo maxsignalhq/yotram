@@ -6,6 +6,7 @@ import { Terminal } from './components/Terminal';
 import { Dashboard, type Workspace } from './components/Dashboard';
 import { Preview } from './components/Preview';
 import { useTheme } from './theme';
+import { getPermissionState, requestNotificationPermission, notifyProcessExit, type PermissionState } from './notifications';
 
 export default function App() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -28,6 +29,7 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [terminals, setTerminals] = useState<string[]>([]);
   const [activeTerminal, setActiveTerminal] = useState('main');
+  const [notifyPermission, setNotifyPermission] = useState<PermissionState>(() => getPermissionState());
   useEffect(() => {
     const c = new WsClient(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/?workspace=${encodeURIComponent(workspace.id)}`);
     c.onStatusChange((s) => {
@@ -43,6 +45,13 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
   }, [workspace.id, workspace.path]);
 
   useEffect(() => {
+    if (!client) return;
+    return client.on('pty:exit', msg => {
+      if (document.visibilityState !== 'visible') notifyProcessExit(msg.sessionId === 'main' ? 'Terminal' : `Shell (${msg.sessionId})`, msg.exitCode);
+    });
+  }, [client]);
+
+  useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
@@ -56,7 +65,13 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
       }}>Projects</button><strong>{workspace.name}</strong><span title={workspace.path}>{workspace.path}</span><button aria-label={terminalVisible ? 'Hide terminal' : 'Open terminal'} aria-pressed={terminalVisible} onClick={() => {
         if (!terminalVisible && terminals.length === 0) { setTerminals(['main']); setActiveTerminal('main'); }
         setTerminalVisible(value => !value);
-      }}>Terminal</button><button aria-pressed={preview} onClick={() => setPreview(value => !value)}>Preview</button><button onClick={() => {
+      }}>Terminal</button><button aria-pressed={preview} onClick={() => setPreview(value => !value)}>Preview</button><button
+        aria-label={notifyPermission === 'granted' ? 'Notifications on' : notifyPermission === 'denied' ? 'Notifications blocked by browser' : 'Enable notifications'}
+        aria-pressed={notifyPermission === 'granted'}
+        disabled={notifyPermission === 'denied'}
+        title={notifyPermission === 'denied' ? 'Notifications are blocked in your browser settings' : undefined}
+        onClick={() => { void requestNotificationPermission().then(setNotifyPermission); }}
+      >🔔</button><button onClick={() => {
         void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.reload());
       }}>Log out</button></header>
       <div className={`app-shell${terminalVisible ? '' : ' without-terminal'}${preview ? ' with-preview' : ''}`}>
