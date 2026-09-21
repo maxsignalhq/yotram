@@ -26,7 +26,7 @@ beforeAll(async () => {
   const workspacePath = path.join(root, 'project');
   const claudeDir = path.join(fakeHome, '.claude', 'projects', mangleClaudePath(workspacePath));
   await mkdir(claudeDir, { recursive: true });
-  await writeFile(path.join(claudeDir, 'abc.jsonl'), JSON.stringify({ type: 'ai-title', aiTitle: 'Fixed the bug' }));
+  await writeFile(path.join(claudeDir, 'abcabcab.jsonl'), JSON.stringify({ type: 'ai-title', aiTitle: 'Fixed the bug' }));
 
   const server = createServer(root, { password: PASSWORD });
   close = server.close;
@@ -49,7 +49,7 @@ describe('GET /api/sessions', () => {
     });
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual([{ id: 'abc', agent: 'claude', title: 'Fixed the bug', updatedAt: expect.any(Number) }]);
+    expect(body).toEqual([{ id: 'abcabcab', agent: 'claude', title: 'Fixed the bug', updatedAt: expect.any(Number) }]);
   });
 
   it('rejects a request with no path query param', async () => {

@@ -41,6 +41,7 @@ The shared password is the primary control on who can reach the IDE. Anyone who 
 - Reconnect the browser connection, refresh open files, and start replacement shells after a disconnect. Running shells are not preserved across disconnects.
 - View git status (staged/unstaged/untracked), view diffs, stage/unstage, commit, and switch branches from the Files/Git sidebar tab, for folders that are git repositories. This is local-only: push, pull, and fetch are not exposed here and stay a terminal operation.
 - Get a browser notification when a terminal's process exits while the tab isn't visible. Opt-in via the bell toggle in the header; it never prompts automatically. Notifications only work while the tab stays open somewhere — there's no push notification support, so closing the tab means no more notifications.
+- See past Claude Code and Codex CLI sessions for the open project in the Sessions sidebar tab, and resume one in a new terminal with one click. This reads each CLI's internal session files, which are undocumented and may change — if sessions stop appearing after a CLI upgrade, that's why. It's read-only: Yotram never modifies or deletes session files.
 
 File contents persist on disk. Unsaved buffers do not survive a browser reload. Shells run with the server user's permissions. The filesystem API's path checks do not sandbox shell commands.
 

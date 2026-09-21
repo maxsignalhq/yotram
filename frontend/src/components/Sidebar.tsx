@@ -12,10 +12,17 @@ export function Sidebar({ client, onOpenFile, theme = 'dark', onToggleTheme = ()
   const [tab, setTab] = useState<'files' | 'git' | 'sessions'>('files');
   const [gitOpened, setGitOpened] = useState(false);
   const [sessionsOpened, setSessionsOpened] = useState(false);
+  // Bumped every time the Sessions tab is (re-)selected, and passed as
+  // SessionsPanel's `key`. SessionsPanel only fetches on mount, and the
+  // lazy-mount-then-`hidden` pattern below would otherwise leave it mounted
+  // once and never re-fetch on subsequent tab switches; changing `key`
+  // forces React to unmount/remount it, re-running its fetch effect, so a
+  // session started after the first open still shows up.
+  const [sessionsOpenCount, setSessionsOpenCount] = useState(0);
   function selectTab(next: 'files' | 'git' | 'sessions') {
     setTab(next);
     if (next === 'git') setGitOpened(true);
-    if (next === 'sessions') setSessionsOpened(true);
+    if (next === 'sessions') { setSessionsOpened(true); setSessionsOpenCount(count => count + 1); }
   }
   return <aside className="filetree">
     <div className="filetree-header">
@@ -28,6 +35,6 @@ export function Sidebar({ client, onOpenFile, theme = 'dark', onToggleTheme = ()
     </div>
     <div hidden={tab !== 'files'}><FileTree client={client} onOpenFile={onOpenFile} /></div>
     {gitOpened && <div hidden={tab !== 'git'}><GitPanel client={client} theme={theme} /></div>}
-    {sessionsOpened && <div hidden={tab !== 'sessions'}><SessionsPanel workspacePath={workspacePath} onResume={onResumeSession} /></div>}
+    {sessionsOpened && <div hidden={tab !== 'sessions'}><SessionsPanel key={sessionsOpenCount} workspacePath={workspacePath} onResume={onResumeSession} /></div>}
   </aside>;
 }

@@ -8,6 +8,17 @@ export interface Session { id: string; agent: 'claude' | 'codex'; title: string;
 export interface CodexScanLimits { matchLimit: number; scanLimit: number }
 
 const DEFAULT_CODEX_LIMITS: CodexScanLimits = { matchLimit: 20, scanLimit: 500 };
+const CLAUDE_MATCH_LIMIT = 20;
+
+// Session ids flow, unmodified, into a shell command typed into a real PTY
+// (see SessionsPanel.tsx's resumeCommand()). Both agents' ids are derived
+// from attacker-controllable sources (a Claude session's filename; a Codex
+// session file's self-reported session_id), so every id is validated against
+// this loose UUID-shaped pattern before it's allowed into a returned
+// Session. This is intentionally loose enough to tolerate variations across
+// CLI versions, but strict enough to reject spaces, semicolons, pipes,
+// backticks, `$()`, and other shell metacharacters.
+const SESSION_ID_PATTERN = /^[0-9a-fA-F-]{8,64}$/;
 
 export function mangleClaudePath(absolutePath: string): string {
   return absolutePath.replace(/[/.]/g, '-');
@@ -54,15 +65,36 @@ export async function listClaudeSessions(
 ): Promise<Session[]> {
   const dir = path.join(claudeProjectsDir, mangleClaudePath(workspacePath));
   const entries = (await safeReaddir(dir)).filter(name => name.endsWith('.jsonl'));
-  const sessions: Session[] = [];
+
+  // Title extraction requires reading every line of a file (to find the
+  // LAST ai-title line), so it can't early-exit the way the Codex scan can.
+  // To keep this bounded on a heavy user's history, stat every candidate
+  // first (cheap), sort by recency, and only extract titles for the newest
+  // CLAUDE_MATCH_LIMIT files.
+  const candidates: { entry: string; filePath: string; mtimeMs: number }[] = [];
   for (const entry of entries) {
     const filePath = path.join(dir, entry);
     try {
       const stats = await stat(filePath);
-      const title = await findLastClaudeTitle(filePath);
-      sessions.push({ id: entry.slice(0, -'.jsonl'.length), agent: 'claude', title: title ?? '(untitled session)', updatedAt: stats.mtimeMs });
+      candidates.push({ entry, filePath, mtimeMs: stats.mtimeMs });
     } catch {
-      // Skip a file we can't stat or read rather than failing the whole list.
+      // Skip a file we can't stat rather than failing the whole list.
+    }
+  }
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  const sessions: Session[] = [];
+  for (const candidate of candidates.slice(0, CLAUDE_MATCH_LIMIT)) {
+    const id = candidate.entry.slice(0, -'.jsonl'.length);
+    // The id is derived directly from a filename in ~/.claude/projects/,
+    // which an attacker (or a corrupted/synced/restored directory) fully
+    // controls, and it later reaches a real shell — see SESSION_ID_PATTERN.
+    if (!SESSION_ID_PATTERN.test(id)) continue;
+    try {
+      const title = await findLastClaudeTitle(candidate.filePath);
+      sessions.push({ id, agent: 'claude', title: title ?? '(untitled session)', updatedAt: candidate.mtimeMs });
+    } catch {
+      // Skip a file we can't read rather than failing the whole list.
     }
   }
   return sessions;
@@ -143,6 +175,10 @@ export async function listCodexSessions(
       const filePath = path.join(dayDir, file);
       const meta = await readCodexSessionMeta(filePath);
       if (!meta || meta.cwd !== workspacePath) continue;
+      // meta.sessionId is a self-reported string from inside the session
+      // file's JSON payload and, like the Claude filename-derived id above,
+      // later reaches a real shell — reject anything not UUID-shaped.
+      if (!SESSION_ID_PATTERN.test(meta.sessionId)) continue;
       const stats = await stat(filePath).catch(() => null);
       const title = await findFirstCodexSummary(filePath);
       sessions.push({ id: meta.sessionId, agent: 'codex', title: title ?? '(untitled session)', updatedAt: stats?.mtimeMs ?? Date.now() });

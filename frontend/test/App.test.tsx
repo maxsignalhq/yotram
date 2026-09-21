@@ -163,3 +163,63 @@ describe('WorkspaceIDE notifications', () => {
     expect(FakeNotification.instances[0].title).toContain('Terminal');
   });
 });
+
+describe('resumeInNewTerminal (Sessions tab "Resume" button)', () => {
+  beforeEach(() => {
+    FakeWsClient.instances = [];
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens a new terminal and, after the 150ms mount delay, sends the resume command as pty:data', async () => {
+    const uuidSpy = vi.spyOn(crypto, 'randomUUID').mockReturnValue('22222222-2222-2222-2222-222222222222' as any);
+    const matchMediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }) as unknown as MediaQueryList);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ id: '550e8400-e29b-41d4-a716-446655440000', agent: 'claude', title: 'Fix the bug', updatedAt: Date.now() }],
+    }));
+
+    render(<App />);
+    const client = FakeWsClient.instances[0];
+    client.open();
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Sessions' }));
+    const resumeButton = await screen.findByRole('button', { name: 'Resume' });
+
+    vi.useFakeTimers();
+    fireEvent.click(resumeButton);
+
+    // Not sent yet -- resumeInNewTerminal defers the pty:data send by 150ms
+    // to give the newly-mounted Terminal's own pty:create a head start.
+    expect(client.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'pty:data' }));
+
+    await act(async () => { vi.advanceTimersByTime(150); });
+
+    expect(client.send).toHaveBeenCalledWith({
+      type: 'pty:data',
+      sessionId: expect.any(String),
+      data: expect.stringContaining('--resume'),
+    });
+    expect(client.send).toHaveBeenCalledWith({
+      type: 'pty:data',
+      sessionId: expect.any(String),
+      data: 'claude --resume 550e8400-e29b-41d4-a716-446655440000\r',
+    });
+
+    uuidSpy.mockRestore();
+    matchMediaSpy.mockRestore();
+  });
+});

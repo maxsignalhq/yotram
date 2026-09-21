@@ -60,4 +60,19 @@ describe('Sidebar', () => {
     expect(fetch).toHaveBeenCalledWith('/api/sessions?path=%2Ftmp%2Fdemo');
     vi.unstubAllGlobals();
   });
+
+  it('re-fetches sessions every time the Sessions tab is reopened, not just the first time', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    const client = fakeClient();
+    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} workspacePath="/tmp/demo" onResumeSession={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Sessions' }));
+    await screen.findByText('No past sessions found for this project.');
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Sessions' }));
+    await screen.findByText('No past sessions found for this project.');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
 });
