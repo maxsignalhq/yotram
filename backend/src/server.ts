@@ -96,10 +96,12 @@ export function createServer(rootDir: string, options: { password: string }): { 
   // Terminal error handler: must be registered last, after all routes and
   // static serving, and must take 4 args for Express to treat it as an
   // error handler. Never leak err.stack or other error detail to clients.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('Unhandled Express error:', err);
-    if (res.headersSent) return;
+    // If headers are already sent, delegate to Express's default handler,
+    // which safely destroys the connection — returning here would leave
+    // the response hanging open until the keep-alive timeout.
+    if (res.headersSent) { next(err); return; }
     res.status(500).json({ error: 'Internal server error' });
   });
   const httpServer = http.createServer(app);
