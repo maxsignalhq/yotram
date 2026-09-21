@@ -74,4 +74,17 @@ describe('notifyProcessExit', () => {
     (window as any).Notification = undefined;
     expect(() => notifyProcessExit('Terminal', 0)).not.toThrow();
   });
+
+  it('does not throw when the Notification constructor itself throws (e.g. Android Chrome)', () => {
+    FakeNotification.permission = 'granted';
+    class ThrowingNotification {
+      static permission: NotificationPermission = 'granted';
+      static requestPermission = vi.fn(async () => 'granted' as NotificationPermission);
+      constructor() {
+        throw new TypeError('Illegal constructor');
+      }
+    }
+    (window as any).Notification = ThrowingNotification;
+    expect(() => notifyProcessExit('Terminal', 0)).not.toThrow();
+  });
 });

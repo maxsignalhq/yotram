@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { WsClient } from './wsClient';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -30,6 +30,11 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
   const [terminals, setTerminals] = useState<string[]>([]);
   const [activeTerminal, setActiveTerminal] = useState('main');
   const [notifyPermission, setNotifyPermission] = useState<PermissionState>(() => getPermissionState());
+  // Mirrors `terminals` for the pty:exit handler below, which must read the
+  // *current* list without making the subscription effect depend on
+  // `terminals` (that would re-subscribe on every terminal add/remove).
+  const terminalsRef = useRef(terminals);
+  useEffect(() => { terminalsRef.current = terminals; }, [terminals]);
   useEffect(() => {
     const c = new WsClient(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/?workspace=${encodeURIComponent(workspace.id)}`);
     c.onStatusChange((s) => {
@@ -47,7 +52,10 @@ function WorkspaceIDE({ workspace, onLeave }: { workspace: Workspace; onLeave: (
   useEffect(() => {
     if (!client) return;
     return client.on('pty:exit', msg => {
-      if (document.visibilityState !== 'visible') notifyProcessExit(msg.sessionId === 'main' ? 'Terminal' : `Shell (${msg.sessionId})`, msg.exitCode);
+      if (document.visibilityState !== 'visible') {
+        const label = msg.sessionId === 'main' ? 'Terminal' : `Shell ${terminalsRef.current.indexOf(msg.sessionId) + 1}`;
+        notifyProcessExit(label, msg.exitCode);
+      }
     });
   }, [client]);
 

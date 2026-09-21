@@ -112,4 +112,54 @@ describe('WorkspaceIDE notifications', () => {
     client.emit('pty:exit', { type: 'pty:exit', sessionId: 'main', exitCode: 0 });
     expect(FakeNotification.instances).toHaveLength(0);
   });
+
+  it('uses the friendly "Shell N" tab label (not the raw session id) for a second terminal\'s exit notification', async () => {
+    FakeNotification.permission = 'granted';
+    const uuidSpy = vi.spyOn(crypto, 'randomUUID').mockReturnValue('11111111-1111-1111-1111-111111111111' as any);
+    // xterm (used by the real, unmocked Terminal component) needs
+    // window.matchMedia, which jsdom doesn't implement.
+    const matchMediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }) as unknown as MediaQueryList);
+    render(<App />);
+    const client = FakeWsClient.instances[0];
+    client.open();
+
+    // Open the terminal panel (creates the 'main' session), then add a
+    // second terminal via the "New terminal" button, mirroring the real
+    // "New terminal" UI flow that assigns it a crypto.randomUUID() id.
+    const terminalToggle = await screen.findByRole('button', { name: 'Open terminal' });
+    await act(async () => { fireEvent.click(terminalToggle); });
+    const newTerminalButton = await screen.findByRole('button', { name: 'New terminal' });
+    await act(async () => { fireEvent.click(newTerminalButton); });
+
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    client.emit('pty:exit', { type: 'pty:exit', sessionId: '11111111-1111-1111-1111-111111111111', exitCode: 1 });
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+
+    expect(FakeNotification.instances).toHaveLength(1);
+    expect(FakeNotification.instances[0].title).toContain('Shell 2');
+    expect(FakeNotification.instances[0].title).not.toContain('11111111');
+    uuidSpy.mockRestore();
+    matchMediaSpy.mockRestore();
+  });
+
+  it('still uses "Terminal" as the label for the main session\'s exit notification (regression check)', async () => {
+    FakeNotification.permission = 'granted';
+    render(<App />);
+    const client = FakeWsClient.instances[0];
+    client.open();
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    client.emit('pty:exit', { type: 'pty:exit', sessionId: 'main', exitCode: 0 });
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    expect(FakeNotification.instances).toHaveLength(1);
+    expect(FakeNotification.instances[0].title).toContain('Terminal');
+  });
 });
