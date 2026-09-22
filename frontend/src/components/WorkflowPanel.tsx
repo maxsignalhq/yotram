@@ -3,7 +3,7 @@ import type { Workspace } from './Dashboard';
 interface Event { id: string; at: number; kind: string; summary: string; file?: string; sessionId?: string; detail?: string }
 interface Handoff { id: string; at: number; note: string; next: string; file?: string; sessionId?: string; checkpointId?: string; branch?: string; port?: number }
 interface Checkpoint { id: string; at: number; label: string; ref: string; patch: string }
-interface Experiment { id: string; name: string; path: string; branch: string; base: string; port: number }
+interface Experiment { id: string; name: string; path: string; branch: string; base: string; port: number; raceId?: string; agent?: string; sessionId?: string }
 interface Activity { events: Event[]; handoffs: Handoff[]; checkpoints: Checkpoint[]; experiments: Experiment[]; retentionDays: number }
 interface Resource { id: string; label: string; pid: number; attention?: string; startedAt: number; exitCode?: number; processes: { pid: number; cpu: number; memoryKB: number; command: string; ports: number[]; elapsed: string }[] }
 interface Props { workspace: Workspace; currentFile: string | null; currentSession: string; previewPort?: number; onClose: () => void; onRun: (command: string) => void; onFile: (file: string) => void; onPreview: (port: number) => void; onSession: (sessionId: string) => void; onOpenWorkspace: (workspace: Workspace) => void }
@@ -18,6 +18,9 @@ export function WorkflowPanel(props: Props) {
   const [detail, setDetail] = useState(''); const [note, setNote] = useState(''); const [next, setNext] = useState('');
   const [checkpoint, setCheckpoint] = useState(''); const [label, setLabel] = useState(''); const [experimentName, setExperimentName] = useState('');
   const [command, setCommand] = useState('');
+  const [racePrompt, setRacePrompt] = useState(''); const [raceAgents, setRaceAgents] = useState<string[]>([]);
+  const [installedAgents, setInstalledAgents] = useState<{ claude: boolean; codex: boolean }>({ claude: false, codex: false });
+  useEffect(() => { fetch('/api/agents').then(r => r.json()).then(setInstalledAgents).catch(() => {}); }, []);
   const readKey = `yotram.read.${workspace.id}`;
   const [readAt, setReadAt] = useState(() => { try { return Number(localStorage.getItem(readKey) ?? 0); } catch { return 0; } });
   const api = useCallback(async (route: string, method = 'GET', body?: unknown) => {
@@ -28,6 +31,13 @@ export function WorkflowPanel(props: Props) {
   useEffect(() => { let active = true; const update = () => { if (active) void refresh().catch(e => { if (active) setError(e.message); }); }; update(); const timer = setInterval(update, 5000); return () => { active = false; clearInterval(timer); }; }, [refresh]);
   async function action(fn: () => Promise<void>) { setBusy(true); setError(''); try { await fn(); await refresh(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
   const events = activity.events.filter(e => (tab !== 'Recap' || e.at > readAt) && (!sessionFilter || e.sessionId === sessionFilter) && `${e.summary} ${e.file ?? ''} ${e.kind}`.toLowerCase().includes(filter.toLowerCase()));
+  const raceGroups: [string, Experiment[]][] = [];
+  const standaloneExperiments: Experiment[] = [];
+  for (const experiment of activity.experiments) {
+    if (!experiment.raceId) { standaloneExperiments.push(experiment); continue; }
+    const group = raceGroups.find(([id]) => id === experiment.raceId);
+    if (group) group[1].push(experiment); else raceGroups.push([experiment.raceId, [experiment]]);
+  }
   const activeCount = resources.filter(s => s.exitCode === undefined).length;
   function markRead() { const at = activity.events.at(-1)?.at ?? Date.now(); setReadAt(at); try { localStorage.setItem(readKey, String(at)); } catch { /* session-only read state */ } }
   async function restore(handoff: Handoff) {
@@ -37,6 +47,10 @@ export function WorkflowPanel(props: Props) {
     if (handoff.sessionId) { if (resources.some(s => s.id === handoff.sessionId && s.exitCode === undefined)) onSession(handoff.sessionId); else warnings.push('The saved terminal is no longer running.'); }
     if (handoff.checkpointId && !activity.checkpoints.some(c => c.id === handoff.checkpointId)) warnings.push('The saved checkpoint is unavailable.');
     setDetail(`Handoff from branch ${handoff.branch || '(not recorded)'}. Restoring context does not switch branches or reset files.\n\n${handoff.note}\n\nNext: ${handoff.next}\n\n${warnings.join('\n')}`);
+  }
+  function ExperimentCard({ experiment }: { experiment: Experiment }) {
+    const resource = experiment.sessionId ? resources.find(r => r.id === experiment.sessionId) : undefined;
+    return <article><strong>{experiment.name}</strong><small>{experiment.branch}</small>{resource && <span className="race-status">{resource.exitCode === undefined ? 'Running' : 'Exited'}</span>}<p>Suggested preview port: {experiment.port}. Start your app with this port; availability can change.</p><div className="workflow-actions">{experiment.sessionId && <button onClick={() => onSession(experiment.sessionId!)}>Open terminal</button>}<button onClick={() => void action(async () => { const response = await fetch('/api/workspaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: experiment.path }) }); const w = await response.json(); if (!response.ok) throw new Error(w.error); onOpenWorkspace(w); })}>Open experiment</button><button onClick={() => onPreview(experiment.port)}>Preview</button><button disabled={busy} onClick={() => void action(async () => { const result = await api(`/experiments/${experiment.id}/diff`); setDetail(result.diff || 'No changes from starting checkpoint.'); })}>Compare changes</button><button disabled={busy} onClick={() => { if (window.confirm('Merge this experiment into the current branch? Both workspaces must be committed and clean. Conflicts require resolution in Git or the terminal.')) void action(async () => { await api(`/experiments/${experiment.id}/merge`, 'POST'); }); }}>Merge</button><button onClick={() => setDetail(`Kept branch: ${experiment.branch}\nWorktree: ${experiment.path}\nIt remains available until you explicitly discard it.`)}>Keep branch</button><button disabled={busy} onClick={() => { if (window.confirm(`Permanently discard "${experiment.name}", its branch, and uncommitted worktree files? Stop its sessions first.`)) void action(async () => { await api(`/experiments/${experiment.id}`, 'DELETE', { confirm: true }); }); }}>Discard</button></div></article>;
   }
   return <aside className="workflow-panel" aria-label="Workspace tools">
     <header><div><h2>Workspace tools</h2><span>{workspace.name} · {activeCount} running</span></div><button onClick={onClose} aria-label="Close workspace tools">×</button></header>
@@ -74,8 +88,13 @@ export function WorkflowPanel(props: Props) {
       <label>Checkpoint name<input value={label} onChange={e => setLabel(e.target.value)} /></label><button disabled={busy || !label.trim()} onClick={() => void action(async () => { const result = await api('/checkpoints', 'POST', { label }); setCheckpoint(result.id); setLabel(''); setDetail(result.patch || 'No changes from HEAD.'); })}>Create checkpoint</button>
       {activity.checkpoints.map(c => <article key={c.id}><strong>{c.label}</strong><small>{new Date(c.at).toLocaleString()} · {c.ref.slice(0, 8)}</small><button onClick={() => { setCheckpoint(c.id); setDetail(c.patch || 'No changes from HEAD.'); }}>Review / select</button></article>)}
       <label>Start from<select value={checkpoint} onChange={e => setCheckpoint(e.target.value)}><option value="">Current HEAD (requires clean workspace)</option>{activity.checkpoints.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
+      <h3>Race agents on one task</h3><p>Runs the same prompt through each selected agent from the checkpoint chosen above (or a fresh one if none is selected), so you can compare their results.</p>
+      <label>Race task<textarea value={racePrompt} onChange={e => setRacePrompt(e.target.value)} /></label>
+      <fieldset><legend>Agents</legend>{(['claude', 'codex'] as const).filter(a => installedAgents[a]).map(a => <label key={a}><input type="checkbox" checked={raceAgents.includes(a)} onChange={e => setRaceAgents(current => e.target.checked ? [...current, a] : current.filter(x => x !== a))} />{a === 'claude' ? 'Claude' : 'Codex'}</label>)}{!installedAgents.claude && !installedAgents.codex && <p>No agents detected on the server PATH.</p>}</fieldset>
+      <button disabled={busy || !racePrompt.trim() || raceAgents.length < 1} onClick={() => void action(async () => { await api('/races', 'POST', { prompt: racePrompt, agents: raceAgents, checkpointId: checkpoint || undefined }); setRacePrompt(''); setRaceAgents([]); })}>Start race</button>
       <label>Experiment name<input value={experimentName} onChange={e => setExperimentName(e.target.value)} /></label><button disabled={busy || !experimentName.trim()} onClick={() => void action(async () => { await api('/experiments', 'POST', { name: experimentName, checkpointId: checkpoint || undefined }); setExperimentName(''); })}>Try an alternative</button>
-      {activity.experiments.map(experiment => <article key={experiment.id}><strong>{experiment.name}</strong><small>{experiment.branch}</small><p>Suggested preview port: {experiment.port}. Start your app with this port; availability can change.</p><div className="workflow-actions"><button onClick={() => void action(async () => { const response = await fetch('/api/workspaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: experiment.path }) }); const w = await response.json(); if (!response.ok) throw new Error(w.error); onOpenWorkspace(w); })}>Open experiment</button><button onClick={() => onPreview(experiment.port)}>Preview</button><button disabled={busy} onClick={() => void action(async () => { const result = await api(`/experiments/${experiment.id}/diff`); setDetail(result.diff || 'No changes from starting checkpoint.'); })}>Compare changes</button><button disabled={busy} onClick={() => { if (window.confirm('Merge this experiment into the current branch? Both workspaces must be committed and clean. Conflicts require resolution in Git or the terminal.')) void action(async () => { await api(`/experiments/${experiment.id}/merge`, 'POST'); }); }}>Merge</button><button onClick={() => setDetail(`Kept branch: ${experiment.branch}\nWorktree: ${experiment.path}\nIt remains available until you explicitly discard it.`)}>Keep branch</button><button disabled={busy} onClick={() => { if (window.confirm(`Permanently discard “${experiment.name}”, its branch, and uncommitted worktree files? Stop its sessions first.`)) void action(async () => { await api(`/experiments/${experiment.id}`, 'DELETE', { confirm: true }); }); }}>Discard</button></div></article>)}
+      {raceGroups.map(([raceId, members]) => <section key={raceId} className="race-group"><h4>Race: {members[0].name.split(' — ').slice(1).join(' — ') || 'task'}</h4>{members.map(experiment => <ExperimentCard key={experiment.id} experiment={experiment} />)}</section>)}
+      {standaloneExperiments.map(experiment => <ExperimentCard key={experiment.id} experiment={experiment} />)}
     </>}
     {detail && <section className="workflow-detail"><h3>Evidence / context</h3><textarea aria-label="Evidence and context" readOnly value={detail} /><button onClick={() => { navigator.clipboard?.writeText(detail).catch(() => setError('Select and copy the text manually; clipboard access is unavailable.')); }}>Copy text</button><button onClick={() => setDetail('')}>Close details</button></section>}
     </div>

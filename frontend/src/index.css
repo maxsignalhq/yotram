@@ -374,6 +374,11 @@ input { background: var(--ide-bg); color: var(--ide-text); border: 1px solid var
 .activity-list { padding-left: 18px; }
 .workflow-detail textarea { min-height: 230px; font-family: monospace; }
 .attention { color: var(--ide-accent); }
+.race-group { margin: 14px 0; padding: 10px; border: 1px solid var(--ide-border); border-radius: 6px; }
+.race-group h4 { margin: 0 0 6px; }
+.race-status { font-size: 12px; padding: 2px 6px; border-radius: 3px; background: var(--ide-border); margin-left: 6px; }
+.workflow-content fieldset { border: 1px solid var(--ide-border); border-radius: 4px; padding: 8px; margin: 10px 0; }
+.workflow-content fieldset label { display: inline-block; margin: 0 10px 0 0; }
 .preview-panel { overflow: auto; }
 .preview-panel iframe { min-height: 300px; }
 .preview-option, .capture-card { padding: 12px; }
