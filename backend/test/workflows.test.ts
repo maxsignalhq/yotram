@@ -190,6 +190,56 @@ describe('agent races', () => {
     expect(output.output).toContain('$(echo INJECTED)');
     expect(output.output).toContain('`echo ALSO_INJECTED`');
   });
+  it('strips C0 control characters (e.g. Ctrl-C) from the prompt so the typed command cannot be aborted mid-line and its remainder run directly', async () => {
+    const { api, workspace } = await setup(gitInit);
+    await stubAgents(['claude']);
+    // \u0003 is ETX (Ctrl-C). If it reached the pty unsanitized, the terminal driver would
+    // abort the partially-typed `claude '...` line and let the remainder run as a fresh,
+    // unquoted shell command — orphaning the tracked-command completion marker.
+    const prompt = 'hello\u0003touch /tmp/should-not-run marker';
+    const response = await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt, agents: ['claude'] });
+    expect(response.status).toBe(200);
+    const { raceId } = await response.json();
+    const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const member = activity.experiments.find((e: any) => e.raceId === raceId);
+    expect(member).toBeTruthy();
+    expect(member.name).not.toContain('\u0003');
+    const workspaceList = await (await api('/api/workspaces')).json();
+    const memberWorkspace = workspaceList.find((item: any) => item.path.endsWith(member.path) || item.path === member.path);
+    // If the command line had been aborted, the tracked-command completion marker would never
+    // fire and this would time out instead of resolving.
+    const output = await waitFor(async () => {
+      const result = await (await api(`/api/workspaces/${memberWorkspace.id}/output/${member.sessionId}`)).json();
+      return result.output.includes('ARGS:') ? result : undefined;
+    });
+    // The control character is neutralized (replaced with a space) and the whole prompt,
+    // including the "touch ..." text, is passed as literal, quoted argument text to the
+    // agent — never executed as a separate shell command.
+    expect(output.output).toContain('ARGS:hello touch /tmp/should-not-run marker');
+    const completed = await waitFor(async () => {
+      const result = await (await api(`/api/workspaces/${memberWorkspace.id}/output/${member.sessionId}`)).json();
+      return result.output.includes('yotram;complete') || !result.running ? result : undefined;
+    });
+    expect(completed).toBeTruthy();
+  });
+  it('preserves multi-line prompts (containing \\n) when sanitizing control characters', async () => {
+    const { api, workspace } = await setup(gitInit);
+    await stubAgents(['claude']);
+    const prompt = 'first line\nsecond line';
+    const response = await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt, agents: ['claude'] });
+    expect(response.status).toBe(200);
+    const { raceId } = await response.json();
+    const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const member = activity.experiments.find((e: any) => e.raceId === raceId);
+    const workspaceList = await (await api('/api/workspaces')).json();
+    const memberWorkspace = workspaceList.find((item: any) => item.path.endsWith(member.path) || item.path === member.path);
+    const output = await waitFor(async () => {
+      const result = await (await api(`/api/workspaces/${memberWorkspace.id}/output/${member.sessionId}`)).json();
+      return result.output.includes('ARGS:') ? result : undefined;
+    });
+    expect(output.output).toContain('ARGS:first line');
+    expect(output.output).toContain('second line');
+  });
   it('rejects invalid race requests', async () => {
     const { api, workspace } = await setup(gitInit);
     await stubAgents(['claude']);

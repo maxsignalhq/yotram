@@ -85,7 +85,8 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
   }));
   app.post('/api/workspaces/:id/races', route(async (req, res) => {
     const w = workspace(req); const record = store.register(w);
-    const prompt = text(req.body?.prompt, 4000); if (!prompt) throw new Error('Describe the task.');
+    let prompt = text(req.body?.prompt, 4000); if (!prompt) throw new Error('Describe the task.');
+    prompt = prompt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ' ');
     const agents = req.body?.agents;
     if (!Array.isArray(agents) || agents.length < 1 || agents.length > 4) throw new Error('Pick 1–4 agents.');
     if (new Set(agents).size !== agents.length) throw new Error('Pick each agent once.');
