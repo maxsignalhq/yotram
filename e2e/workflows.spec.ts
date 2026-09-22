@@ -87,6 +87,7 @@ test('creates a dirty checkpoint and an isolated alternative, then compares and 
 });
 
 test('shows the race form but disables it when no agents are installed', async ({ page }) => {
+  await page.route('**/api/agents', route => route.fulfill({ json: { claude: false, codex: false } }));
   await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
   const panel = page.getByRole('complementary', { name: 'Workspace tools' });
   await panel.getByRole('button', { name: 'Experiments', exact: true }).click();
