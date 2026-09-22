@@ -79,7 +79,7 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     const w = workspace(req); const record = store.register(w); const experiment = record.experiments.find(e => e.id === req.params.experiment);
     if (!experiment) throw new Error('Unknown experiment');
     const ew = workspaces.list().find(item => item.path === experiment.path);
-    if (ew && runtime(ew).pty.list().some(s => s.exitCode === undefined)) throw new Error('Stop the experiment\'s running sessions in Resources before discarding.');
+    if (ew && runtime(ew).pty.list().some(s => s.exitCode === undefined)) throw new Error('Stop the experiment’s running sessions in Resources before discarding.');
     await experiments.locked(w.id, () => experiments.discard(w.id, experiment.id, req.body?.confirm === true));
     if (ew) { workspaces.forget(ew.id); const record = store.get(ew.id); if (record) { record.forgotten = true; store.changed(); } } res.json({ ok: true });
   }));
@@ -87,7 +87,7 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     const w = workspace(req); const record = store.register(w);
     const prompt = text(req.body?.prompt, 4000); if (!prompt) throw new Error('Describe the task.');
     const agents = req.body?.agents;
-    if (!Array.isArray(agents) || agents.length < 1 || agents.length > 4) throw new Error('Pick 1-4 agents.');
+    if (!Array.isArray(agents) || agents.length < 1 || agents.length > 4) throw new Error('Pick 1–4 agents.');
     if (new Set(agents).size !== agents.length) throw new Error('Pick each agent once.');
     for (const agent of agents) if (agent !== 'claude' && agent !== 'codex') throw new Error(`Unknown agent: ${agent}`);
     const available = await installedAgents();
@@ -97,10 +97,10 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     await experiments.locked(w.id, async () => {
       const resolvedCheckpointId = checkpointId ?? (await experiments.checkpoint(w.id, `Race: ${prompt.slice(0, 60)}`)).id;
       for (const agent of agents as ('claude' | 'codex')[]) {
-        const result = await experiments.create(w.id, `${agent} - ${prompt.slice(0, 40)}`, resolvedCheckpointId);
+        const result = await experiments.create(w.id, `${agent} — ${prompt.slice(0, 40)}`, resolvedCheckpointId);
         const entry = record.experiments.find(e => e.id === result.id)!;
         entry.raceId = raceId; entry.agent = agent; store.changed();
-        const opened = await workspaces.open(result.path); store.register(opened);
+        const opened = await workspaces.open(result.path);
         const sessionId = randomUUID();
         runtime(opened).create(sessionId, 80, 24, `${agent} ${shellQuote(prompt)}`);
         entry.sessionId = sessionId; store.changed();

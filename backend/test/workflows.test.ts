@@ -40,7 +40,7 @@ async function stubAgents(names: string[] = ['claude', 'codex']) {
     await chmod(filePath, 0o755);
   }
   const original = process.env.PATH;
-  process.env.PATH = `${bin}:/bin:/usr/bin:/usr/local/bin`;
+  process.env.PATH = `${bin}${path.delimiter}${original ?? ''}`;
   cleanups.push(() => { process.env.PATH = original; });
 }
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeout = 4000): Promise<T> {
