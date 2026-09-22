@@ -86,6 +86,15 @@ test('creates a dirty checkpoint and an isolated alternative, then compares and 
   await expect(panel.getByText('Alternate layout', { exact: true })).toHaveCount(0);
 });
 
+test('shows the race form but disables it when no agents are installed', async ({ page }) => {
+  await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Workspace tools' });
+  await panel.getByRole('button', { name: 'Experiments', exact: true }).click();
+  await expect(panel.getByLabel('Race task')).toBeVisible();
+  await expect(panel.getByText('No agents detected on the server PATH.')).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Start race' })).toBeDisabled();
+});
+
 test('captures an element and screenshot from the isolated preview into a reviewable task', async ({ page }) => {
   const server = http.createServer((_req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<html><body style="background:white;color:black;font-family:sans-serif"><h1>Preview capture</h1><button data-source="src/Button.tsx">Change this button</button></body></html>'); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
