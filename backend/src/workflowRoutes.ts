@@ -11,6 +11,7 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
   const route = (fn: (req: Request, res: Response) => Promise<unknown> | unknown) => (req: Request, res: Response) => { Promise.resolve().then(() => fn(req, res)).catch(error => res.status(400).json({ error: (error as Error).message })); };
   const workspace = (req: Request) => { const w = workspaces.get(String(req.params.id)); if (!w) throw new Error('Workspace no longer exists. Open its folder again.'); return w; };
   const text = (value: unknown, max = 8000) => { if (typeof value !== 'string' || value.length > max) throw new Error('Invalid text'); return value.trim(); };
+  const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
   app.get('/api/workspaces', route((_req, res) => res.json(workspaces.list().map(w => ({ ...w, sessions: runtime(w).pty.list() })))));
   app.delete('/api/workspaces/:id', route((req, res) => {
     const w = workspace(req); if (workspaces.get('local')?.id === w.id) throw new Error('The startup workspace remains available as the default project.'); if (runtime(w).pty.list().some(s => s.exitCode === undefined)) throw new Error('Stop running sessions before forgetting this workspace.');
@@ -78,8 +79,33 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     const w = workspace(req); const record = store.register(w); const experiment = record.experiments.find(e => e.id === req.params.experiment);
     if (!experiment) throw new Error('Unknown experiment');
     const ew = workspaces.list().find(item => item.path === experiment.path);
-    if (ew && runtime(ew).pty.list().some(s => s.exitCode === undefined)) throw new Error('Stop the experiment’s running sessions in Resources before discarding.');
+    if (ew && runtime(ew).pty.list().some(s => s.exitCode === undefined)) throw new Error('Stop the experiment\'s running sessions in Resources before discarding.');
     await experiments.locked(w.id, () => experiments.discard(w.id, experiment.id, req.body?.confirm === true));
     if (ew) { workspaces.forget(ew.id); const record = store.get(ew.id); if (record) { record.forgotten = true; store.changed(); } } res.json({ ok: true });
+  }));
+  app.post('/api/workspaces/:id/races', route(async (req, res) => {
+    const w = workspace(req); const record = store.register(w);
+    const prompt = text(req.body?.prompt, 4000); if (!prompt) throw new Error('Describe the task.');
+    const agents = req.body?.agents;
+    if (!Array.isArray(agents) || agents.length < 1 || agents.length > 4) throw new Error('Pick 1-4 agents.');
+    if (new Set(agents).size !== agents.length) throw new Error('Pick each agent once.');
+    for (const agent of agents) if (agent !== 'claude' && agent !== 'codex') throw new Error(`Unknown agent: ${agent}`);
+    const available = await installedAgents();
+    for (const agent of agents as ('claude' | 'codex')[]) if (!available[agent]) throw new Error(`${agent} is not installed on the server.`);
+    const checkpointId = req.body?.checkpointId ? text(req.body.checkpointId, 100) : undefined;
+    const raceId = randomUUID();
+    await experiments.locked(w.id, async () => {
+      const resolvedCheckpointId = checkpointId ?? (await experiments.checkpoint(w.id, `Race: ${prompt.slice(0, 60)}`)).id;
+      for (const agent of agents as ('claude' | 'codex')[]) {
+        const result = await experiments.create(w.id, `${agent} - ${prompt.slice(0, 40)}`, resolvedCheckpointId);
+        const entry = record.experiments.find(e => e.id === result.id)!;
+        entry.raceId = raceId; entry.agent = agent; store.changed();
+        const opened = await workspaces.open(result.path); store.register(opened);
+        const sessionId = randomUUID();
+        runtime(opened).create(sessionId, 80, 24, `${agent} ${shellQuote(prompt)}`);
+        entry.sessionId = sessionId; store.changed();
+      }
+    });
+    res.json({ ok: true, raceId });
   }));
 }

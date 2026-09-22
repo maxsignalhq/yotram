@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -14,8 +14,9 @@ import { Experiments } from '../src/experiments.js';
 const cleanups: (() => Promise<unknown> | void)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.reverse()) await cleanup(); cleanups.length = 0; });
 async function folder() { const root = await mkdtemp(path.join(tmpdir(), 'yotram-workflow-')); cleanups.push(() => rm(root, { recursive: true, force: true })); return root; }
-async function setup() {
+async function setup(prepare?: (root: string) => Promise<void> | void) {
   const root = await folder(); const state = await folder();
+  if (prepare) await prepare(root);
   const server = createServer(root, { password: 'test', stateDir: state });
   await new Promise<void>(resolve => server.httpServer.listen(0, '127.0.0.1', resolve)); cleanups.push(server.close);
   const port = (server.httpServer.address() as AddressInfo).port;
@@ -24,6 +25,28 @@ async function setup() {
   const workspace = await (await api('/api/workspaces/default')).json() as { id: string };
   async function connect() { const ws = new WebSocket(`ws://127.0.0.1:${port}/?workspace=${workspace.id}`, { headers: { Cookie: cookie } }); await new Promise<void>(resolve => ws.once('open', resolve)); cleanups.push(() => ws.terminate()); return ws; }
   return { root, state, server, port, cookie, api, workspace, connect };
+}
+async function gitInit(root: string) {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+  git('init', '-q'); git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test');
+  await writeFile(path.join(root, 'app.txt'), 'base');
+  git('add', '.'); git('commit', '-qm', 'initial');
+}
+async function stubAgents(names: string[] = ['claude', 'codex']) {
+  const bin = await folder();
+  for (const name of names) {
+    const filePath = path.join(bin, name);
+    await writeFile(filePath, '#!/bin/sh\nprintf \'ARGS:%s\\n\' "$*"\n');
+    await chmod(filePath, 0o755);
+  }
+  const original = process.env.PATH;
+  process.env.PATH = `${bin}:/bin:/usr/bin:/usr/local/bin`;
+  cleanups.push(() => { process.env.PATH = original; });
+}
+async function waitFor<T>(fn: () => Promise<T | undefined>, timeout = 4000): Promise<T> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) { const value = await fn(); if (value !== undefined) return value; await new Promise(r => setTimeout(r, 50)); }
+  throw new Error('Timed out waiting for condition');
 }
 function message(ws: WebSocket, type: string): Promise<any> { return new Promise((resolve, reject) => { const timer = setTimeout(() => { ws.off('message', listener); reject(new Error(`Timed out waiting for ${type}`)); }, 4000); const listener = (data: WebSocket.RawData) => { const result = JSON.parse(data.toString()); if (result.type === type) { clearTimeout(timer); ws.off('message', listener); resolve(result); } }; ws.on('message', listener); }); }
 
@@ -119,4 +142,64 @@ it('does not feed the completion marker into an interactive tracked program', as
   expect((await done).value).toBe('0');
   const replay = message(ws, 'pty:ready'); ws.send(JSON.stringify({ type: 'pty:create', sessionId: 'interactive', cols: 80, rows: 24 }));
   expect((await replay).output).toContain('RECEIVED:USER_INPUT');
+});
+
+describe('agent races', () => {
+  it('creates tagged experiments and running sessions for each racing agent, from one shared checkpoint', async () => {
+    const { api, workspace } = await setup(gitInit);
+    await stubAgents();
+    const response = await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Refactor the login form', agents: ['claude', 'codex'] });
+    expect(response.status).toBe(200);
+    const { raceId } = await response.json();
+    expect(raceId).toBeTruthy();
+    const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const members = activity.experiments.filter((e: any) => e.raceId === raceId);
+    expect(members).toHaveLength(2);
+    expect(members.map((m: any) => m.agent).sort()).toEqual(['claude', 'codex']);
+    expect(activity.checkpoints).toHaveLength(1);
+    for (const member of members) {
+      expect(member.base).toBe(activity.checkpoints[0].ref);
+      const output = await waitFor(async () => {
+        const result = await (await api(`/api/workspaces/${workspace.id}/output/${member.sessionId}`)).json();
+        return result.output.includes('ARGS:') ? result : undefined;
+      });
+      expect(output.output).toContain('ARGS:Refactor the login form');
+    }
+  });
+  it('treats the prompt as literal shell-quoted text, not executable shell syntax', async () => {
+    const { api, workspace } = await setup(gitInit);
+    await stubAgents(['claude']);
+    const prompt = "it's a task: $(echo INJECTED) `echo ALSO_INJECTED`";
+    const response = await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt, agents: ['claude'] });
+    expect(response.status).toBe(200);
+    const { raceId } = await response.json();
+    const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const member = activity.experiments.find((e: any) => e.raceId === raceId);
+    const output = await waitFor(async () => {
+      const result = await (await api(`/api/workspaces/${workspace.id}/output/${member.sessionId}`)).json();
+      return result.output.includes('ARGS:') ? result : undefined;
+    });
+    expect(output.output).toContain('$(echo INJECTED)');
+    expect(output.output).toContain('`echo ALSO_INJECTED`');
+  });
+  it('rejects invalid race requests', async () => {
+    const { api, workspace } = await setup(gitInit);
+    await stubAgents(['claude']);
+    expect((await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: '', agents: ['claude'] })).status).toBe(400);
+    expect((await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Task', agents: [] })).status).toBe(400);
+    expect((await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Task', agents: ['claude', 'claude'] })).status).toBe(400);
+    expect((await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Task', agents: ['claude', 'codex', 'claude', 'codex', 'claude'] })).status).toBe(400);
+    expect((await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Task', agents: ['codex'] })).status).toBe(400);
+    expect((await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Task', agents: ['gemini'] })).status).toBe(400);
+  });
+  it('reuses a supplied checkpoint instead of auto-creating one', async () => {
+    const { api, workspace } = await setup(gitInit);
+    await stubAgents(['claude']);
+    const checkpoint = await (await api(`/api/workspaces/${workspace.id}/checkpoints`, 'POST', { label: 'Before race' })).json();
+    const response = await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Task', agents: ['claude'], checkpointId: checkpoint.id });
+    expect(response.status).toBe(200);
+    const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    expect(activity.checkpoints).toHaveLength(1);
+    expect(activity.checkpoints[0].id).toBe(checkpoint.id);
+  });
 });
