@@ -39,8 +39,11 @@ async function stubAgents(names: string[] = ['claude', 'codex']) {
     await writeFile(filePath, '#!/bin/sh\nprintf \'ARGS:%s\\n\' "$*"\n');
     await chmod(filePath, 0o755);
   }
+  const gitPath = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const gitDir = await folder();
+  execFileSync('cp', [gitPath, path.join(gitDir, 'git')]);
   const original = process.env.PATH;
-  process.env.PATH = `${bin}${path.delimiter}${original ?? ''}`;
+  process.env.PATH = `${bin}${path.delimiter}${gitDir}`;
   cleanups.push(() => { process.env.PATH = original; });
 }
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeout = 4000): Promise<T> {
@@ -159,8 +162,10 @@ describe('agent races', () => {
     expect(activity.checkpoints).toHaveLength(1);
     for (const member of members) {
       expect(member.base).toBe(activity.checkpoints[0].ref);
+      const workspaceList = await (await api('/api/workspaces')).json();
+      const memberWorkspace = workspaceList.find((item: any) => item.path.endsWith(member.path) || item.path === member.path);
       const output = await waitFor(async () => {
-        const result = await (await api(`/api/workspaces/${workspace.id}/output/${member.sessionId}`)).json();
+        const result = await (await api(`/api/workspaces/${memberWorkspace.id}/output/${member.sessionId}`)).json();
         return result.output.includes('ARGS:') ? result : undefined;
       });
       expect(output.output).toContain('ARGS:Refactor the login form');
@@ -175,8 +180,10 @@ describe('agent races', () => {
     const { raceId } = await response.json();
     const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
     const member = activity.experiments.find((e: any) => e.raceId === raceId);
+    const workspaceList = await (await api('/api/workspaces')).json();
+    const memberWorkspace = workspaceList.find((item: any) => item.path.endsWith(member.path) || item.path === member.path);
     const output = await waitFor(async () => {
-      const result = await (await api(`/api/workspaces/${workspace.id}/output/${member.sessionId}`)).json();
+      const result = await (await api(`/api/workspaces/${memberWorkspace.id}/output/${member.sessionId}`)).json();
       return result.output.includes('ARGS:') ? result : undefined;
     });
     expect(output.output).toContain('$(echo INJECTED)');

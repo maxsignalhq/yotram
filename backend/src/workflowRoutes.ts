@@ -100,7 +100,7 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
         const result = await experiments.create(w.id, `${agent} — ${prompt.slice(0, 40)}`, resolvedCheckpointId);
         const entry = record.experiments.find(e => e.id === result.id)!;
         entry.raceId = raceId; entry.agent = agent; store.changed();
-        const opened = await workspaces.open(result.path);
+        const opened = await workspaces.open(result.path); store.register(opened);
         const sessionId = randomUUID();
         runtime(opened).create(sessionId, 80, 24, `${agent} ${shellQuote(prompt)}`);
         entry.sessionId = sessionId; store.changed();
