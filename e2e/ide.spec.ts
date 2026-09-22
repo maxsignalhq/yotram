@@ -21,6 +21,8 @@ test.beforeEach(async ({ context, baseURL }) => {
   await context.request.post(`${baseURL}/api/login`, {
     data: { password: TEST_PASSWORD },
   });
+  const workspaces = await (await context.request.get(`${baseURL}/api/workspaces`)).json();
+  for (const workspace of workspaces) if (workspace.path === fixtureDir) for (const session of workspace.sessions) await context.request.delete(`${baseURL}/api/workspaces/${workspace.id}/sessions/${session.id}`);
 });
 
 test('edit a file and run a shell command end-to-end', async ({ page }) => {

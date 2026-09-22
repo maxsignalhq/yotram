@@ -7,12 +7,29 @@ export function Dashboard({ onOpen }: { onOpen: (workspace: Workspace) => void }
   const [current, setCurrent] = useState<Workspace | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [running, setRunning] = useState<Record<string, { count: number; attention: number }>>({});
   const [recent, setRecent] = useState<string[]>(() => {
     try { const value: unknown = JSON.parse(localStorage.getItem('yotram.projects') ?? '[]'); return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').slice(0, 12) : []; } catch { return []; }
   });
   useEffect(() => {
     fetch('/api/workspaces/default').then(response => { if (response.status === 401) { window.location.reload(); return; } if (!response.ok) throw new Error('Unable to connect to the project server'); return response.json(); }).then(result => { if (result) setCurrent(result); }).catch(error => setError(error.message));
   }, []);
+  useEffect(() => {
+    let active = true;
+    const update = () => fetch('/api/workspaces').then(r => { if (!r.ok) throw new Error('Unable to load shared projects'); return r.json(); }).then(items => {
+      if (!active || !Array.isArray(items)) return;
+      setRecent(items.map((w: Workspace) => w.path));
+      setRunning(Object.fromEntries(items.map((w: Workspace & { sessions: { exitCode?: number; attention?: string }[] }) => [w.path, { count: w.sessions.filter(s => s.exitCode === undefined).length, attention: w.sessions.filter(s => s.attention).length }])));
+    }).catch(() => {});
+    void update(); const timer = setInterval(update, 5000); return () => { active = false; clearInterval(timer); };
+  }, []);
+  async function forget(path: string) {
+    try {
+      const response = await fetch('/api/workspaces'); const items = await response.json(); const workspace = items.find((w: Workspace) => w.path === path);
+      if (workspace) { const result = await fetch(`/api/workspaces/${workspace.id}`, { method: 'DELETE' }); if (!result.ok) { const body = await result.json(); throw new Error(body.error); } }
+      remember(recent.filter(item => item !== path));
+    } catch (e) { setError((e as Error).message); }
+  }
   function remember(paths: string[]) { setRecent(paths); try { localStorage.setItem('yotram.projects', JSON.stringify(paths)); } catch { /* Browser storage may be disabled. */ } }
   async function open(path: string, create = false) {
     setBusy(true); setError('');
@@ -47,6 +64,6 @@ export function Dashboard({ onOpen }: { onOpen: (workspace: Workspace) => void }
       </form><p>New projects include a simple web app. The parent folder must already exist.</p>
       {busy && <p role="status">Opening project…</p>}
     </section>
-    {recent.length > 0 && <section><h2>Recent projects</h2>{recent.map(path => <div className="recent-project" key={path}><button disabled={busy} onClick={() => void open(path)}><strong>{path.split('/').pop()}</strong><span>{path}</span></button><button aria-label={`Forget ${path}`} onClick={() => remember(recent.filter(item => item !== path))}>Forget</button></div>)}</section>}
+    {recent.length > 0 && <section><h2>Recent projects</h2>{recent.map(path => <div className="recent-project" key={path}><button disabled={busy} onClick={() => void open(path)}><strong>{path.split('/').pop()}</strong><span>{path}</span><span>{running[path]?.count ?? 0} running{running[path]?.attention ? ` · ${running[path].attention} need attention` : ''}</span></button><button aria-label={`Forget ${path}`} onClick={() => void forget(path)}>Forget</button></div>)}</section>}
   </div>{picker && <FolderPicker create={picker === 'create'} busy={busy} error={error} onClose={() => { setPicker(null); setError(''); }} onSelect={path => void open(path, picker === 'create')} />}</main>;
 }

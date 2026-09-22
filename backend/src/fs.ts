@@ -12,7 +12,7 @@ export class PathEscapeError extends Error {
 export class WorkspaceFs {
   private watcher?: FSWatcher;
 
-  constructor(private readonly rootDir: string) {}
+  constructor(private readonly rootDir: string, private readonly ignoredRoot?: string) {}
 
   private resolve(relPath: string): string {
     const resolved = path.resolve(this.rootDir, relPath);
@@ -83,7 +83,7 @@ export class WorkspaceFs {
   }
 
   watch(onEvent: (event: { path: string; kind: 'add' | 'change' | 'unlink' }) => void): () => void {
-    const watcher = chokidar.watch(this.rootDir, { ignoreInitial: true, ignored: /(^|[/\\])(node_modules|\.git)([/\\]|$)/ });
+    const watcher = chokidar.watch(this.rootDir, { ignoreInitial: true, ignored: (file: string) => /(^|[/\\])(node_modules|\.git|\.yotram|\.claude|\.codex)([/\\]|$)/.test(file) || !!(this.ignoredRoot && (file === this.ignoredRoot || file.startsWith(this.ignoredRoot + path.sep))) });
     const relOf = (absolute: string) => path.relative(this.rootDir, absolute);
     watcher.on('addDir', (p) => onEvent({ path: relOf(p), kind: 'add' }));
     watcher.on('unlinkDir', (p) => onEvent({ path: relOf(p), kind: 'unlink' }));

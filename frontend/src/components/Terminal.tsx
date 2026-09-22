@@ -10,9 +10,10 @@ const XTERM_THEMES: Record<Theme, { background: string; foreground: string; curs
   light: { background: '#ffffff', foreground: '#1e1e1e', cursor: '#1e1e1e' },
 };
 
-export function Terminal({ client, sessionId, theme = 'dark' }: { client: WsClient; sessionId: string; theme?: Theme }) {
+export function Terminal({ client, sessionId, theme = 'dark', command }: { client: WsClient; sessionId: string; theme?: Theme; command?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
+  const commandRef = useRef(command);
 
   useEffect(() => {
     const term = new XTerm({ theme: XTERM_THEMES[theme] });
@@ -22,11 +23,18 @@ export function Terminal({ client, sessionId, theme = 'dark' }: { client: WsClie
     if (containerRef.current) term.open(containerRef.current);
     fitAddon.fit();
 
-    client.send({ type: 'pty:create', sessionId, cols: term.cols, rows: term.rows });
-
     let exited = false;
+    let attached = false;
+    const unsubReady = client.on('pty:ready', msg => {
+      if (msg.sessionId !== sessionId) return;
+      term.reset?.(); term.write(msg.output); attached = true;
+      exited = msg.exitCode !== undefined;
+      if (exited) term.write(`\r\nShell exited (${msg.exitCode}). Start a new terminal to continue.\r\n`);
+      commandRef.current = undefined;
+    });
+    const unsubError = client.on('pty:error', msg => { if (msg.sessionId === sessionId) term.write(`\r\n${msg.message}\r\n`); });
     const unsubscribeStatus = client.onStatusChange?.(status => {
-      if (status === 'closed') { exited = true; term.write('\r\nConnection lost. Shell ended.\r\n'); }
+      if (status === 'closed') { attached = false; term.write('\r\nDisconnected. Shell continues on the server.\r\n'); }
       if (status === 'open') { exited = false; client.send({ type: 'pty:create', sessionId, cols: term.cols, rows: term.rows }); }
     });
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
@@ -38,7 +46,7 @@ export function Terminal({ client, sessionId, theme = 'dark' }: { client: WsClie
 
 
     const unsubData = client.on('pty:data', (msg) => {
-      if (msg.sessionId === sessionId) term.write(msg.data);
+      if (msg.sessionId === sessionId && attached) term.write(msg.data);
     });
     const unsubExit = client.on('pty:exit', (msg) => {
       if (msg.sessionId === sessionId) {
@@ -47,14 +55,16 @@ export function Terminal({ client, sessionId, theme = 'dark' }: { client: WsClie
       }
     });
     term.onData((data: string) => {
-      if (exited) return;
+      if (exited || !attached) return;
       client.send({ type: 'pty:data', sessionId, data });
     });
+
+    client.send({ type: 'pty:create', sessionId, cols: term.cols, rows: term.rows, ...(commandRef.current ? { command: commandRef.current } : {}) });
 
     return () => {
       observer?.disconnect();
       unsubscribeStatus?.();
-      client.send({ type: 'pty:kill', sessionId });
+      unsubReady(); unsubError();
       unsubData();
       unsubExit();
       term.dispose();

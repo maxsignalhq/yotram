@@ -144,8 +144,10 @@ async function readCodexSessionMeta(filePath: string): Promise<{ sessionId: stri
   const record = parsed as Record<string, unknown>;
   if (record.type !== 'session_meta') return null;
   const payload = record.payload as Record<string, unknown> | undefined;
-  if (!payload || typeof payload.session_id !== 'string' || typeof payload.cwd !== 'string') return null;
-  return { sessionId: payload.session_id, cwd: payload.cwd };
+  if (!payload || typeof payload.cwd !== 'string') return null;
+  const sessionId = payload.session_id ?? payload.id;
+  if (typeof sessionId !== 'string') return null;
+  return { sessionId, cwd: payload.cwd };
 }
 
 async function collectCodexDayDirs(root: string): Promise<string[]> {

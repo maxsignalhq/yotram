@@ -4,8 +4,12 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { Workspaces } from './workspaces.js';
-import { WorkspaceFs } from './fs.js';
-import { PtyManager } from './pty.js';
+import { Runtime } from './runtime.js';
+import { ActivityStore } from './activity.js';
+import { Experiments } from './experiments.js';
+import { PreviewService } from './preview.js';
+import { workflowRoutes } from './workflowRoutes.js';
+import os from 'node:os';
 import { Git } from './git.js';
 import { listSessions } from './sessions.js';
 import { isClientMessage, ServerMessage } from './protocol.js';
@@ -105,10 +109,23 @@ const LOGIN_PAGE_HTML = `<!doctype html>
 </body>
 </html>`;
 
-export function createServer(rootDir: string, options: { password: string }): { httpServer: http.Server; close: () => void } {
+export function createServer(rootDir: string, options: { password: string; stateDir?: string }): { httpServer: http.Server; close: () => void } {
   const app = express();
   const workspaces = new Workspaces(rootDir);
   const auth = new Auth(options.password);
+  const store = new ActivityStore(options.stateDir);
+  workspaces.restore(store.all().filter(record => !record.forgotten));
+  store.register(workspaces.get('local')!);
+  const runtimes = new Map<string, Runtime>();
+  const runtime = (workspace: import('./workspaces.js').Workspace) => {
+    let r = runtimes.get(workspace.id);
+    if (!r) { r = new Runtime(workspace, store, message => broadcast(message, workspace.path)); runtimes.set(workspace.id, r); }
+    return r;
+  };
+  const experiments = new Experiments(store, path.join(options.stateDir ?? path.join(os.tmpdir(), `yotram-${process.pid}`), 'experiments'));
+  const previews = new PreviewService(() => {
+    const address = httpServer.address(); return typeof address === 'object' && address ? address.port : 0;
+  }, () => { const address = httpServer.address(); return typeof address === 'object' && address ? address.address : '127.0.0.1'; });
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin && origin !== `http://${req.headers.host}`) { res.status(403).json({ error: 'Origin not allowed' }); return; }
@@ -139,7 +156,7 @@ export function createServer(rootDir: string, options: { password: string }): { 
     catch (error) { res.status(400).json({ error: (error as Error).message }); }
   });
   app.post('/api/workspaces', async (req, res) => {
-    try { res.json(await workspaces.open(req.body?.path, req.body?.create === true)); }
+    try { const workspace = await workspaces.open(req.body?.path, req.body?.create === true); store.register(workspace); runtime(workspace); res.json(workspace); }
     catch (error) { res.status(400).json({ error: (error as Error).message }); }
   });
   app.get('/api/sessions', async (req, res) => {
@@ -151,6 +168,7 @@ export function createServer(rootDir: string, options: { password: string }): { 
     try { res.json(await listSessions(workspacePath)); }
     catch (error) { res.status(400).json({ error: (error as Error).message }); }
   });
+  workflowRoutes(app, store, workspaces, runtime, experiments, previews);
   const frontendDist = path.resolve(fileURLToPath(import.meta.url), '../../../frontend/dist');
   app.use(express.static(frontendDist));
   // Terminal error handler: must be registered last, after all routes and
@@ -166,9 +184,7 @@ export function createServer(rootDir: string, options: { password: string }): { 
   });
   const httpServer = http.createServer(app);
   const wss = new WebSocketServer({ server: httpServer });
-  const managers = new Set<PtyManager>();
   const roots = new Map<WebSocket, string>();
-  const watches = new Set<() => void>();
   function broadcast(msg: ServerMessage, directory: string): void {
     for (const client of wss.clients) {
       if (roots.get(client) === directory && client.readyState === WebSocket.OPEN) client.send(JSON.stringify(msg));
@@ -183,16 +199,12 @@ export function createServer(rootDir: string, options: { password: string }): { 
       const id = new URL(request.url ?? '/', 'http://localhost').searchParams.get('workspace') ?? 'local';
       const workspace = workspaces.get(id);
       if (!workspace) { ws.close(1008, 'Unknown workspace'); return; }
-      const workspaceFs = new WorkspaceFs(workspace.path);
-      const git = new Git(workspace.path);
       roots.set(ws, workspace.path);
-      const unwatch = workspaceFs.watch(event => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'fs:watch-event', ...event }));
-      });
-      watches.add(unwatch);
-      const ptyManager = new PtyManager(workspace.path);
-      managers.add(ptyManager);
-      ws.on('close', () => { unwatch(); watches.delete(unwatch); roots.delete(ws); ptyManager.dispose(); managers.delete(ptyManager); });
+      const r = runtime(workspace);
+      const workspaceFs = r.fs;
+      const ptyManager = r.pty;
+      const git = new Git(workspace.path);
+      ws.on('close', () => { roots.delete(ws); });
       ws.on('message', async (raw) => {
         try {
           let parsed: unknown;
@@ -204,7 +216,9 @@ export function createServer(rootDir: string, options: { password: string }): { 
           if (!isClientMessage(parsed)) return;
 
           switch (parsed.type) {
-            case 'pty:kill': ptyManager.kill(parsed.sessionId); break;
+            case 'pty:kill': ptyManager.kill(parsed.sessionId); r.list(); break;
+            case 'pty:list': ws.send(JSON.stringify({ type: 'pty:list', sessions: ptyManager.list() })); break;
+            case 'pty:ack': ptyManager.acknowledge(parsed.sessionId); r.list(); break;
             case 'fs:create': case 'fs:rename': case 'fs:delete': {
               try {
                 if (parsed.type === 'fs:create') await workspaceFs.create(parsed.path, parsed.directory);
@@ -242,14 +256,11 @@ export function createServer(rootDir: string, options: { password: string }): { 
               break;
             }
             case 'pty:create': {
-              try { ptyManager.create(
-                parsed.sessionId,
-                parsed.cols,
-                parsed.rows,
-                (data) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:data', sessionId: parsed.sessionId, data })); },
-                (exitCode) => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode })); },
-              ); } catch {
-                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'pty:exit', sessionId: parsed.sessionId, exitCode: 1 }));
+              try {
+                r.create(parsed.sessionId, parsed.cols, parsed.rows, parsed.command);
+                ws.send(JSON.stringify({ type: 'pty:ready', sessionId: parsed.sessionId, output: ptyManager.replay(parsed.sessionId), exitCode: ptyManager.list().find(s => s.id === parsed.sessionId)?.exitCode }));
+              } catch (error) {
+                ws.send(JSON.stringify({ type: 'pty:error', sessionId: parsed.sessionId, message: (error as Error).message }));
               }
               break;
             }
@@ -332,11 +343,14 @@ export function createServer(rootDir: string, options: { password: string }): { 
     }
   });
 
+  let closed = false;
   return {
     httpServer,
     close: () => {
-      for (const unwatch of watches) unwatch();
-      for (const manager of managers) manager.dispose();
+      if (closed) return; closed = true;
+      for (const r of runtimes.values()) r.dispose();
+      previews.close();
+      store.flush();
       for (const client of wss.clients) client.terminate();
       wss.close();
       httpServer.close();

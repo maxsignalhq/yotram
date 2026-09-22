@@ -175,7 +175,7 @@ describe('resumeInNewTerminal (Sessions tab "Resume" button)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('opens a new terminal and, after the 150ms mount delay, sends the resume command as pty:data', async () => {
+  it('creates a terminal with its resume command atomically, without a timing delay', async () => {
     const uuidSpy = vi.spyOn(crypto, 'randomUUID').mockReturnValue('22222222-2222-2222-2222-222222222222' as any);
     const matchMediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
       matches: false,
@@ -202,22 +202,12 @@ describe('resumeInNewTerminal (Sessions tab "Resume" button)', () => {
     vi.useFakeTimers();
     fireEvent.click(resumeButton);
 
-    // Not sent yet -- resumeInNewTerminal defers the pty:data send by 150ms
-    // to give the newly-mounted Terminal's own pty:create a head start.
+    expect(client.send).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'pty:create', sessionId: expect.any(String),
+      command: 'claude --resume 550e8400-e29b-41d4-a716-446655440000',
+    }));
+    await act(async () => { vi.advanceTimersByTime(1000); });
     expect(client.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'pty:data' }));
-
-    await act(async () => { vi.advanceTimersByTime(150); });
-
-    expect(client.send).toHaveBeenCalledWith({
-      type: 'pty:data',
-      sessionId: expect.any(String),
-      data: expect.stringContaining('--resume'),
-    });
-    expect(client.send).toHaveBeenCalledWith({
-      type: 'pty:data',
-      sessionId: expect.any(String),
-      data: 'claude --resume 550e8400-e29b-41d4-a716-446655440000\r',
-    });
 
     uuidSpy.mockRestore();
     matchMediaSpy.mockRestore();

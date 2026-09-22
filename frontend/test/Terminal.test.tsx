@@ -42,9 +42,15 @@ describe('Terminal', () => {
     );
   });
 
+  it('detaches on unmount without killing the server-owned shell', () => {
+    const client = fakeClient(); const result = render(<Terminal client={client as unknown as WsClient} sessionId="s2" />);
+    result.unmount(); expect(client.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'pty:kill' }));
+  });
+
   it('writes incoming pty:data to the terminal', () => {
     const client = fakeClient();
     render(<Terminal client={client as unknown as WsClient} sessionId="s1" />);
+    client.emit({ type: 'pty:ready', sessionId: 's1', output: 'restored' });
     client.emit({ type: 'pty:data', sessionId: 's1', data: 'hello' });
     expect(writeSpy).toHaveBeenCalledWith('hello');
   });

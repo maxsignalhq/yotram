@@ -46,7 +46,7 @@ function connect(): Promise<WebSocket> {
 }
 
 function nextMessage(ws: WebSocket): Promise<any> {
-  return new Promise(resolve => ws.once('message', raw => resolve(JSON.parse(raw.toString()))));
+  return new Promise(resolve => { const listener = (raw: WebSocket.RawData) => { const result = JSON.parse(raw.toString()); if (result.type.startsWith('git:')) { ws.off('message', listener); resolve(result); } }; ws.on('message', listener); });
 }
 
 describe('git WebSocket protocol', () => {

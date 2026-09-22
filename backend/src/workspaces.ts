@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { mkdir, realpath, stat, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -6,8 +7,15 @@ export interface Workspace { id: string; name: string; path: string }
 export class Workspaces {
   private items = new Map<string, Workspace>();
   constructor(private readonly defaultPath: string) {
-    this.items.set('local', { id: 'local', name: path.basename(defaultPath), path: defaultPath });
+    try { this.defaultPath = realpathSync(defaultPath); } catch { /* Startup folder may be created shortly after launch. */ }
+    defaultPath = this.defaultPath;
+    const id = createHash('sha256').update(defaultPath).digest('hex').slice(0, 24);
+    const workspace = { id, name: path.basename(defaultPath), path: defaultPath };
+    this.items.set('local', workspace); this.items.set(id, workspace);
   }
+  restore(workspaces: Workspace[]): void { for (const workspace of workspaces) this.items.set(workspace.id, workspace); }
+  list(): Workspace[] { return [...new Map([...this.items.values()].map(w => [w.id, w])).values()]; }
+  forget(id: string): void { if (id !== 'local') this.items.delete(id); }
   get(id: string): Workspace | undefined { return this.items.get(id); }
   async browse(input: unknown): Promise<{ path: string; parent: string; folders: string[] }> {
     const directory = await realpath(typeof input === 'string' && input.trim() ? path.resolve(this.defaultPath, input) : this.defaultPath);

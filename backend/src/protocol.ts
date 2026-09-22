@@ -1,7 +1,7 @@
 export interface FsListMessage { type: 'fs:list'; path: string }
 export interface FsReadMessage { type: 'fs:read'; path: string }
 export interface FsWriteMessage { type: 'fs:write'; path: string; content: string }
-export interface PtyCreateMessage { type: 'pty:create'; sessionId: string; cols: number; rows: number }
+export interface PtyCreateMessage { type: 'pty:create'; sessionId: string; cols: number; rows: number; command?: string }
 export interface PtyDataMessage { type: 'pty:data'; sessionId: string; data: string }
 export interface PtyResizeMessage { type: 'pty:resize'; sessionId: string; cols: number; rows: number }
 export interface GitStatusMessage { type: 'git:status' }
@@ -17,6 +17,8 @@ export type ClientMessage =
   | { type: 'fs:rename'; path: string; destination: string }
   | { type: 'fs:delete'; path: string }
   | { type: 'pty:kill'; sessionId: string }
+  | { type: 'pty:list' }
+  | { type: 'pty:ack'; sessionId: string }
   | FsListMessage
   | FsReadMessage
   | FsWriteMessage
@@ -43,6 +45,10 @@ export interface GitBranchesResultMessage { type: 'git:branches'; branches: { na
 export interface GitErrorMessage { type: 'git:error'; message: string }
 
 export type ServerMessage =
+  | { type: 'pty:ready'; sessionId: string; output: string; exitCode?: number }
+  | { type: 'pty:list'; sessions: { id: string; pid: number; startedAt: number; exitCode?: number; attention?: string; label: string }[] }
+  | { type: 'pty:signal'; sessionId: string; kind: string; value: string }
+  | { type: 'pty:error'; sessionId: string; message: string }
   | { type: 'fs:saved'; path: string; content: string }
   | { type: 'fs:updated'; path: string; destination?: string; operation: 'create' | 'rename' | 'delete' }
   | FsListResultMessage
@@ -66,7 +72,10 @@ export function isClientMessage(x: unknown): x is ClientMessage {
     case 'fs:write': return str('path') && str('content');
     case 'fs:create': return str('path') && typeof m.directory === 'boolean';
     case 'fs:rename': return str('path') && str('destination');
-    case 'pty:create': case 'pty:resize': return str('sessionId') && size('cols') && size('rows');
+    case 'pty:create': return str('sessionId') && size('cols') && size('rows') && (m.command === undefined || (str('command') && String(m.command).length < 16000));
+    case 'pty:resize': return str('sessionId') && size('cols') && size('rows');
+    case 'pty:list': return true;
+    case 'pty:ack': return str('sessionId');
     case 'pty:data': return str('sessionId') && str('data');
     case 'pty:kill': return str('sessionId');
     case 'git:status': case 'git:branches': return true;
