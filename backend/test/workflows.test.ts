@@ -42,9 +42,10 @@ async function stubAgents(names: string[] = ['claude', 'codex']) {
   const gitPath = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
   const gitDir = await folder();
   execFileSync('cp', [gitPath, path.join(gitDir, 'git')]);
-  const original = process.env.PATH;
+  const originalPath = process.env.PATH; const originalShell = process.env.SHELL;
   process.env.PATH = `${bin}${path.delimiter}${gitDir}`;
-  cleanups.push(() => { process.env.PATH = original; });
+  process.env.SHELL = '/bin/sh';
+  cleanups.push(() => { process.env.PATH = originalPath; process.env.SHELL = originalShell; });
 }
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeout = 4000): Promise<T> {
   const start = Date.now();
