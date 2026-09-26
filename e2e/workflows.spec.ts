@@ -86,6 +86,53 @@ test('creates a dirty checkpoint and an isolated alternative, then compares and 
   await expect(panel.getByText('Alternate layout', { exact: true })).toHaveCount(0);
 });
 
+test('creates a pull request for an experiment and shows its status, with a working refresh', async ({ page, context }) => {
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root });
+  git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com'); git('add', '.'); git('commit', '-qm', 'Initial');
+
+  await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Workspace tools' });
+  await panel.getByRole('button', { name: 'Experiments', exact: true }).click();
+  await panel.getByLabel('Experiment name', { exact: true }).fill('Try a fix');
+  await panel.getByRole('button', { name: 'Try an alternative' }).click();
+  await expect(panel.getByText('Try a fix', { exact: true })).toBeVisible();
+
+  const workspaces = await (await context.request.get('/api/workspaces')).json();
+  const parent = workspaces.find((w: any) => w.path.endsWith(path.basename(root)));
+  const history = await (await context.request.get(`/api/workspaces/${parent.id}/activity`)).json();
+  const experimentId = history.experiments[0].id;
+
+  let created = false;
+  await page.route(`**/experiments/${experimentId}/pr`, route => {
+    if (route.request().method() === 'POST') {
+      created = true;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/api/workspaces/*/activity', route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const experiments = created
+      ? [{ ...history.experiments[0], prUrl: 'https://github.com/test/repo/pull/1', prState: 'open', prChecks: 'pending' }]
+      : history.experiments;
+    route.fulfill({ json: { ...history, experiments } });
+  });
+
+  page.once('dialog', dialog => dialog.accept());
+  await panel.getByRole('button', { name: 'Create PR' }).click();
+  await expect(panel.getByRole('link', { name: /View PR/ })).toHaveAttribute('href', 'https://github.com/test/repo/pull/1');
+  await expect(panel.getByText('pending', { exact: true })).toBeVisible();
+
+  await page.route(`**/experiments/${experimentId}/pr`, route => route.fulfill({ json: { ok: true } }));
+  await page.route('**/api/workspaces/*/activity', route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    route.fulfill({ json: { ...history, experiments: [{ ...history.experiments[0], prUrl: 'https://github.com/test/repo/pull/1', prState: 'merged', prChecks: 'passing' }] } });
+  });
+  await panel.getByRole('button', { name: 'Refresh PR status' }).click();
+  await expect(panel.getByText('merged', { exact: true })).toBeVisible();
+  await expect(panel.getByText('passing', { exact: true })).toBeVisible();
+});
+
 test('shows the race form but disables it when no agents are installed', async ({ page }) => {
   await page.route('**/api/agents', route => route.fulfill({ json: { claude: false, codex: false } }));
   await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
