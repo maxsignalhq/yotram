@@ -103,20 +103,38 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
 
   return (
     <div className="workspace-view">
-      <header className="workspace-header"><button onClick={() => {
-        if (window.confirm(dirty ? 'Discard unsaved edits and return to projects? Terminals will keep running.' : 'Return to projects? Terminals will keep running.')) onLeave();
-      }}>Projects</button><strong>{workspace.name}</strong><span title={workspace.path}>{workspace.path}</span><button aria-label={terminalVisible ? 'Hide terminal' : 'Open terminal'} aria-pressed={terminalVisible} onClick={() => {
-        if (!terminalVisible && terminals.length === 0) { setTerminals(['main']); setActiveTerminal('main'); }
-        setTerminalVisible(value => !value);
-      }}>Terminal</button><button aria-pressed={preview} onClick={() => setPreview(value => !value)}>Preview</button><button onClick={() => { setWorkflow(value => !value); setRecap(''); }} aria-label="Workspace tools" aria-pressed={workflow}>Workspace tools</button>{agents.claude && <button onClick={() => resumeInNewTerminal('claude')}>Start Claude</button>}{agents.codex && <button onClick={() => resumeInNewTerminal('codex')}>Start Codex</button>}<button
-        aria-label={notifyPermission === 'granted' ? 'Notifications on' : notifyPermission === 'denied' ? 'Notifications blocked by browser' : 'Enable notifications'}
-        aria-pressed={notifyPermission === 'granted'}
-        disabled={notifyPermission === 'denied'}
-        title={notifyPermission === 'denied' ? 'Notifications are blocked in your browser settings' : undefined}
-        onClick={() => { void requestNotificationPermission().then(setNotifyPermission); }}
-      >🔔</button><button onClick={() => {
-        void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.reload());
-      }}>Log out</button></header>
+      <header className="workspace-header">
+        <div className="workspace-header-left">
+          <button onClick={() => {
+            if (window.confirm(dirty ? 'Discard unsaved edits and return to projects? Terminals will keep running.' : 'Return to projects? Terminals will keep running.')) onLeave();
+          }}>Projects</button>
+          <strong className="workspace-name">{workspace.name}</strong>
+          <span className="workspace-path" title={workspace.path}>{workspace.path}</span>
+        </div>
+        <div className="workspace-header-center header-segment">
+          <button aria-label={terminalVisible ? 'Hide terminal' : 'Open terminal'} aria-pressed={terminalVisible} onClick={() => {
+            if (!terminalVisible && terminals.length === 0) { setTerminals(['main']); setActiveTerminal('main'); }
+            setTerminalVisible(value => !value);
+          }}>Terminal</button>
+          <button aria-pressed={preview} onClick={() => setPreview(value => !value)}>Preview</button>
+          <button onClick={() => { setWorkflow(value => !value); setRecap(''); }} aria-label="Workspace tools" aria-pressed={workflow}>Workspace tools</button>
+        </div>
+        <div className="workspace-header-right">
+          {agents.claude && <button onClick={() => resumeInNewTerminal('claude')}>Start Claude</button>}
+          {agents.codex && <button onClick={() => resumeInNewTerminal('codex')}>Start Codex</button>}
+          <button
+            className="button-icon"
+            aria-label={notifyPermission === 'granted' ? 'Notifications on' : notifyPermission === 'denied' ? 'Notifications blocked by browser' : 'Enable notifications'}
+            aria-pressed={notifyPermission === 'granted'}
+            disabled={notifyPermission === 'denied'}
+            title={notifyPermission === 'denied' ? 'Notifications are blocked in your browser settings' : undefined}
+            onClick={() => { void requestNotificationPermission().then(setNotifyPermission); }}
+          >🔔</button>
+          <button onClick={() => {
+            void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.reload());
+          }}>Log out</button>
+        </div>
+      </header>
       {recap && <button className="recap-banner" onClick={() => { setWorkflow(true); setRecap(''); }}>While you were away: {recap}. Review activity →</button>}
       <div className={`app-shell${terminalVisible ? '' : ' without-terminal'}${preview ? ' with-preview' : ''}`}>
       {status !== 'open' && (
