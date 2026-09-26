@@ -96,6 +96,36 @@ test('shows the race form but disables it when no agents are installed', async (
   await expect(panel.getByRole('button', { name: 'Start race' })).toBeDisabled();
 });
 
+test('compares race results side by side and persists a winner pick', async ({ page }) => {
+  const claudeDiff = `diff --git a/app.txt b/app.txt\nindex 1111111..2222222 100644\n--- a/app.txt\n+++ b/app.txt\n@@ -1,1 +1,2 @@\n Initial code\n+claude change\n`;
+  const codexDiff = `diff --git a/app.txt b/app.txt\nindex 1111111..3333333 100644\n--- a/app.txt\n+++ b/app.txt\n@@ -1,1 +1,3 @@\n Initial code\n+codex change one\n+codex change two\n`;
+  const raceId = 'e2e-race-1';
+  const members = [
+    { id: 'e2e-claude', name: 'claude — task', path: root, branch: 'yotram/experiment-e2e-1', base: 'abc', at: Date.now(), port: 4101, raceId, agent: 'claude' },
+    { id: 'e2e-codex', name: 'codex — task', path: root, branch: 'yotram/experiment-e2e-2', base: 'abc', at: Date.now(), port: 4102, raceId, agent: 'codex' },
+  ];
+  await page.route('**/api/workspaces/*/activity', route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    route.fulfill({ json: { events: [], handoffs: [], checkpoints: [], experiments: members, retentionDays: 30 } });
+  });
+  await page.route('**/experiments/e2e-claude/diff', route => route.fulfill({ json: { diff: claudeDiff } }));
+  await page.route('**/experiments/e2e-codex/diff', route => route.fulfill({ json: { diff: codexDiff } }));
+  await page.route('**/experiments/e2e-claude/winner', route => {
+    members[0].winner = true; members[1].winner = false;
+    route.fulfill({ json: { ok: true } });
+  });
+
+  await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Workspace tools' });
+  await panel.getByRole('button', { name: 'Experiments', exact: true }).click();
+  await panel.getByRole('button', { name: 'Compare race' }).click();
+  await expect(panel.getByText('1 files · +1/-0')).toBeVisible();
+  await expect(panel.getByText('1 files · +2/-0')).toBeVisible();
+
+  await panel.getByRole('button', { name: '★ Mark winner' }).first().click();
+  await expect(panel.getByText('★ Winner')).toBeVisible();
+});
+
 test('captures an element and screenshot from the isolated preview into a reviewable task', async ({ page }) => {
   const server = http.createServer((_req, res) => { res.setHeader('Content-Type', 'text/html'); res.end('<html><body style="background:white;color:black;font-family:sans-serif"><h1>Preview capture</h1><button data-source="src/Button.tsx">Change this button</button></body></html>'); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
