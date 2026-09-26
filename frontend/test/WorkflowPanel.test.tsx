@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { WorkflowPanel } from '../src/components/WorkflowPanel';
@@ -71,5 +72,47 @@ describe('WorkflowPanel races', () => {
     expect(screen.getByText('claude — Refactor the login form')).toBeTruthy();
     expect(screen.getByText('codex — Refactor the login form')).toBeTruthy();
     expect(screen.getByText('Solo try')).toBeTruthy();
+  });
+});
+
+describe('WorkflowPanel GitHub PR integration', () => {
+  beforeEach(() => { vi.stubGlobal('fetch', vi.fn()); });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+
+  it('creates a pull request for an experiment with no PR yet', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockApi({
+      agents: { claude: false, codex: false, gh: true },
+      activity: {
+        events: [], handoffs: [], retentionDays: 30, checkpoints: [],
+        experiments: [{ id: 'exp-1', name: 'Try a fix', path: '/tmp/exp-1', branch: 'yotram/experiment-1', base: 'abc', port: 4001 }],
+      },
+    });
+    render(<WorkflowPanel {...baseProps()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Experiments', exact: true }));
+    await screen.findByText('Try a fix');
+    fireEvent.click(screen.getByRole('button', { name: 'Create PR' }));
+    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/workspaces/w1/experiments/exp-1/pr', expect.objectContaining({ method: 'POST' })));
+    confirmSpy.mockRestore();
+  });
+
+  it('shows the PR link, state, and checks badges once a PR exists, and can refresh', async () => {
+    mockApi({
+      agents: { claude: false, codex: false, gh: true },
+      activity: {
+        events: [], handoffs: [], retentionDays: 30, checkpoints: [],
+        experiments: [{ id: 'exp-1', name: 'Try a fix', path: '/tmp/exp-1', branch: 'yotram/experiment-1', base: 'abc', port: 4001, prUrl: 'https://github.com/test/repo/pull/1', prState: 'open', prChecks: 'passing' }],
+      },
+    });
+    render(<WorkflowPanel {...baseProps()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Experiments', exact: true }));
+    await screen.findByText('Try a fix');
+    const link = screen.getByRole('link', { name: /View PR/ });
+    expect(link).toHaveAttribute('href', 'https://github.com/test/repo/pull/1');
+    expect(screen.getByText('open')).toBeTruthy();
+    expect(screen.getByText('passing')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh PR status' }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/workspaces/w1/experiments/exp-1/pr', expect.objectContaining({ method: 'GET' })));
   });
 });

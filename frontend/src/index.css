@@ -515,3 +515,11 @@ input:hover {
 .diffline-remove { background: var(--ide-danger-bg); color: var(--ide-danger-text); font-family: var(--ide-font-mono); font-size: var(--ide-text-sm); white-space: pre-wrap; padding: 0 var(--ide-space-2); }
 .diffline-context { font-family: var(--ide-font-mono); font-size: var(--ide-text-sm); white-space: pre-wrap; padding: 0 var(--ide-space-2); color: var(--ide-text-muted); }
 .winner-badge { color: var(--ide-success-text); font-weight: var(--ide-weight-semibold); margin-left: var(--ide-space-2); }
+.pr-state, .pr-checks { font-size: 12px; padding: 2px 6px; border-radius: 3px; margin-left: 6px; }
+.pr-state-open { background: var(--ide-accent-subtle); color: var(--ide-accent); }
+.pr-state-merged { background: var(--ide-success-bg); color: var(--ide-success-text); }
+.pr-state-closed { background: var(--ide-danger-bg); color: var(--ide-danger-text); }
+.pr-checks-passing { background: var(--ide-success-bg); color: var(--ide-success-text); }
+.pr-checks-failing { background: var(--ide-danger-bg); color: var(--ide-danger-text); }
+.pr-checks-pending { background: var(--ide-warning-bg); color: var(--ide-warning-text); }
+.pr-checks-none { background: var(--ide-bg-elevated); color: var(--ide-text-muted); }
