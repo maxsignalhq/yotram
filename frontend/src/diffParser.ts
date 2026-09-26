@@ -33,8 +33,8 @@ export function parseUnifiedDiff(diffText: string): ParsedFile[] {
       continue;
     }
     if (!current) continue;
-    if (line.startsWith('--- ')) { sawDevNullMinus = line === '--- /dev/null'; continue; }
-    if (line.startsWith('+++ ')) {
+    if (!currentHunk && line.startsWith('--- ')) { sawDevNullMinus = line === '--- /dev/null'; continue; }
+    if (!currentHunk && line.startsWith('+++ ')) {
       sawDevNullPlus = line === '+++ /dev/null';
       if (sawDevNullMinus) current.status = 'added';
       else if (sawDevNullPlus) { current.status = 'deleted'; current.path = aPath; }
@@ -49,8 +49,8 @@ export function parseUnifiedDiff(diffText: string): ParsedFile[] {
       continue;
     }
     if (!currentHunk) continue;
-    if (line.startsWith('+') && !line.startsWith('+++')) { currentHunk.lines.push({ type: 'add', text: line.slice(1) }); current.additions++; }
-    else if (line.startsWith('-') && !line.startsWith('---')) { currentHunk.lines.push({ type: 'remove', text: line.slice(1) }); current.deletions++; }
+    if (line.startsWith('+')) { currentHunk.lines.push({ type: 'add', text: line.slice(1) }); current.additions++; }
+    else if (line.startsWith('-')) { currentHunk.lines.push({ type: 'remove', text: line.slice(1) }); current.deletions++; }
     else if (line.startsWith(' ')) currentHunk.lines.push({ type: 'context', text: line.slice(1) });
   }
   finishFile();

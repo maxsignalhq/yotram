@@ -8,9 +8,15 @@ interface ColumnState { loading: boolean; error: string; files: ParsedFile[] }
 export function RaceComparison({ workspaceId, members, onWinnerChange }: RaceComparisonProps) {
   const [columns, setColumns] = useState<Record<string, ColumnState>>({});
 
+  const memberIdsKey = members.map(m => m.id).join(',');
+
   useEffect(() => {
     let cancelled = false;
-    setColumns(Object.fromEntries(members.map(m => [m.id, { loading: true, error: '', files: [] }])));
+    setColumns(previous => {
+      const next: Record<string, ColumnState> = {};
+      for (const member of members) next[member.id] = previous[member.id] ?? { loading: true, error: '', files: [] };
+      return next;
+    });
     Promise.all(members.map(async member => {
       try {
         const response = await fetch(`/api/workspaces/${workspaceId}/experiments/${member.id}/diff`);
@@ -22,7 +28,8 @@ export function RaceComparison({ workspaceId, members, onWinnerChange }: RaceCom
       }
     })).then(results => { if (!cancelled) setColumns(Object.fromEntries(results)); });
     return () => { cancelled = true; };
-  }, [workspaceId, members]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, memberIdsKey]);
 
   async function markWinner(memberId: string, winner: boolean) {
     await fetch(`/api/workspaces/${workspaceId}/experiments/${memberId}/winner`, {

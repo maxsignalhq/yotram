@@ -105,4 +105,29 @@ describe('parseUnifiedDiff', () => {
     expect(files).toHaveLength(2);
     expect(files.map(f => f.path)).toEqual(['src/app.ts', 'src/new.ts']);
   });
+
+  it('does not misclassify in-hunk lines that start with --- or +++ as file headers', () => {
+    // The removed line's original content is "-- old comment" (two dashes); with its leading
+    // '-' diff marker it appears in the raw diff as "--- old comment" (three dashes + space),
+    // which matches the file-header pattern. Likewise the added line's content "++ trouble
+    // maker" becomes "+++ trouble maker" once marked as added. Both must still be classified
+    // as ordinary diff lines because a hunk is already open.
+    const diff = `diff --git a/db/schema.sql b/db/schema.sql
+index 1111111..2222222 100644
+--- a/db/schema.sql
++++ b/db/schema.sql
+@@ -1,2 +1,2 @@
+--- old comment
++++ trouble maker
+-real remove
++real add
+`;
+    const [file] = parseUnifiedDiff(diff);
+    expect(file.hunks[0].lines).toEqual([
+      { type: 'remove', text: '-- old comment' },
+      { type: 'add', text: '++ trouble maker' },
+      { type: 'remove', text: 'real remove' },
+      { type: 'add', text: 'real add' },
+    ]);
+  });
 });

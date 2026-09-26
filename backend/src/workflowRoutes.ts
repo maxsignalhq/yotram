@@ -6,6 +6,7 @@ import { Runtime } from './runtime.js';
 import { installedAgents, ownedResources } from './resources.js';
 import { Experiments } from './experiments.js';
 import { PreviewService } from './preview.js';
+import { applyWinner } from './raceWinner.js';
 
 export function workflowRoutes(app: Express, store: ActivityStore, workspaces: Workspaces, runtime: (workspace: Workspace) => Runtime, experiments: Experiments, previews: PreviewService) {
   const route = (fn: (req: Request, res: Response) => Promise<unknown> | unknown) => (req: Request, res: Response) => { Promise.resolve().then(() => fn(req, res)).catch(error => res.status(400).json({ error: (error as Error).message })); };
@@ -81,8 +82,7 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     if (!experiment) throw new Error('Unknown experiment');
     if (!experiment.raceId) throw new Error('Only race members can be marked as a winner.');
     const winner = req.body?.winner === true;
-    if (winner) for (const member of record.experiments) if (member.raceId === experiment.raceId) member.winner = member.id === experiment.id;
-    else experiment.winner = false;
+    applyWinner(record.experiments, experiment.id, experiment.raceId, winner);
     store.changed(); res.json({ ok: true });
   }));
   app.delete('/api/workspaces/:id/experiments/:experiment', route(async (req, res) => {
