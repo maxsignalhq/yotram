@@ -131,6 +131,8 @@ h1, h2, h3 {
   letter-spacing: -0.01em;
 }
 
+.dashboard section h2 { margin-bottom: var(--ide-space-3); }
+
 h1 { font-size: var(--ide-text-xl); }
 h2 { font-size: var(--ide-text-lg); }
 
@@ -388,11 +390,11 @@ input:hover {
 .dashboard-actions button, .recent-project > button:first-child, .workspace-header-left button, .workspace-header-right button:not(.button-icon) { padding: 8px 12px; background: var(--ide-bg-elevated); border: 1px solid var(--ide-border); border-radius: 5px; cursor: pointer; }
 .recent-project { display: flex; align-items: center; gap: var(--ide-space-2); margin: 2px 0; padding: var(--ide-space-2) var(--ide-space-2); border-radius: var(--ide-radius-sm); transition: background-color var(--ide-duration-fast) var(--ide-ease-standard); }
 .recent-project:hover { background: var(--ide-bg-elevated); }
-.recent-project > button:first-child { flex: 1; text-align: left; min-width: 0; }
+.recent-project > button:first-child { flex: 1; text-align: left; min-width: 0; background: transparent; border: none; padding: 0; }
 .recent-project span { display: block; margin-top: 6px; color: var(--ide-text-muted); overflow-wrap: anywhere; }
 .workspace-view { height: 100vh; display: flex; flex-direction: column; }
 .workspace-header { display: flex; align-items: center; gap: var(--ide-space-3); padding: var(--ide-space-2) var(--ide-space-3); border-bottom: 1px solid var(--ide-border); background: var(--ide-bg-panel); flex-wrap: wrap; }
-.workspace-header-left { display: flex; align-items: center; gap: var(--ide-space-2); min-width: 0; }
+.workspace-header-left { display: flex; align-items: center; gap: var(--ide-space-2); flex: 1; min-width: 0; }
 .workspace-header-left .workspace-name { font-weight: var(--ide-weight-semibold); font-size: var(--ide-text-md); white-space: nowrap; }
 .workspace-header-left .workspace-path { font-size: var(--ide-text-sm); color: var(--ide-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .header-segment { display: flex; border: 1px solid var(--ide-border); border-radius: var(--ide-radius-sm); overflow: hidden; }
@@ -400,6 +402,7 @@ input:hover {
 .header-segment button:last-child { border-right: none; }
 .header-segment button:hover { background: var(--ide-bg-hover); }
 .header-segment button[aria-pressed='true'] { background: var(--ide-bg-active); color: var(--ide-accent); }
+.header-segment button:focus-visible { outline-offset: -2px; }
 .workspace-header-right { display: flex; align-items: center; gap: var(--ide-space-2); margin-left: auto; }
 .workspace-view .app-shell { flex: 1; height: auto; min-height: 0; }
 .app-shell.with-preview { grid-template-columns: 220px minmax(240px, 1fr) minmax(280px, 1fr); }
@@ -502,4 +505,4 @@ input:hover {
 @media (max-width: 700px) { .workflow-panel { top: 90px; } .workspace-header > span { display: none; } }
 .workflow-panel > header, .workflow-panel > nav { flex-shrink: 0; }
 .workflow-content { min-height: 0; flex: 1; }
-.recap-banner { text-align: left; padding: 8px 16px; color: var(--ide-accent); background: var(--ide-bg-panel); border: 0; border-bottom: 1px solid var(--ide-border); cursor: pointer; }
+.recap-banner { text-align: left; padding: 8px 16px; color: var(--ide-accent); background: var(--ide-accent-subtle); border: 0; border-bottom: 1px solid var(--ide-border); cursor: pointer; }
