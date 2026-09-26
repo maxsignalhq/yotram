@@ -385,7 +385,7 @@ input:hover {
   border-color: var(--ide-border-strong);
 }
 .dashboard-actions { display: flex; gap: 8px; }
-.dashboard-actions button, .recent-project button, .workspace-header button { padding: 8px 12px; background: var(--ide-bg-elevated); border: 1px solid var(--ide-border); border-radius: 5px; cursor: pointer; }
+.dashboard-actions button, .recent-project > button:first-child, .workspace-header button { padding: 8px 12px; background: var(--ide-bg-elevated); border: 1px solid var(--ide-border); border-radius: 5px; cursor: pointer; }
 .recent-project { display: flex; align-items: center; gap: var(--ide-space-2); margin: 2px 0; padding: var(--ide-space-2) var(--ide-space-2); border-radius: var(--ide-radius-sm); transition: background-color var(--ide-duration-fast) var(--ide-ease-standard); }
 .recent-project:hover { background: var(--ide-bg-elevated); }
 .recent-project > button:first-child { flex: 1; text-align: left; min-width: 0; }
