@@ -364,10 +364,10 @@ button[aria-selected='true'], button[aria-pressed='true'], button[aria-current='
 .filetree-list .filetree-list { padding-left: 12px; }
 .reconnect-banner { position: fixed; top: 0; right: 0; z-index: 10; }
 
-.dashboard { min-height: 100vh; padding: 60px 24px; background: var(--ide-bg); }
+.dashboard { min-height: 100vh; padding: var(--ide-space-6) var(--ide-space-4); background: var(--ide-bg); }
 .dashboard-inner { max-width: 760px; margin: auto; }
-.eyebrow { color: var(--ide-accent); font-size: 11px; letter-spacing: .14em; }
-.dashboard h1 { font-size: 34px; letter-spacing: -.03em; }
+.eyebrow { color: var(--ide-accent); font-size: var(--ide-text-sm); font-weight: var(--ide-weight-semibold); letter-spacing: .14em; }
+.dashboard h1 { font-size: 34px; letter-spacing: -.03em; margin-top: var(--ide-space-2); }
 .dashboard-description, .project-path, .project-card > p { color: var(--ide-text-muted); line-height: 1.6; }
 .project-card { margin: 30px 0; padding: 24px; background: var(--ide-bg-panel); border: 1px solid var(--ide-border); border-radius: var(--ide-radius-md); box-shadow: var(--ide-shadow-panel); }
 .project-card form { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
@@ -386,7 +386,8 @@ input:hover {
 }
 .dashboard-actions { display: flex; gap: 8px; }
 .dashboard-actions button, .recent-project button, .workspace-header button { padding: 8px 12px; background: var(--ide-bg-elevated); border: 1px solid var(--ide-border); border-radius: 5px; cursor: pointer; }
-.recent-project { display: flex; gap: 8px; margin: 10px 0; }
+.recent-project { display: flex; align-items: center; gap: var(--ide-space-2); margin: 2px 0; padding: var(--ide-space-2) var(--ide-space-2); border-radius: var(--ide-radius-sm); transition: background-color var(--ide-duration-fast) var(--ide-ease-standard); }
+.recent-project:hover { background: var(--ide-bg-elevated); }
 .recent-project > button:first-child { flex: 1; text-align: left; min-width: 0; }
 .recent-project span { display: block; margin-top: 6px; color: var(--ide-text-muted); overflow-wrap: anywhere; }
 .workspace-view { height: 100vh; display: flex; flex-direction: column; }

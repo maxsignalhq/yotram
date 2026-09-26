@@ -64,6 +64,6 @@ export function Dashboard({ onOpen }: { onOpen: (workspace: Workspace) => void }
       </form><p>New projects include a simple web app. The parent folder must already exist.</p>
       {busy && <p role="status">Opening project…</p>}
     </section>
-    {recent.length > 0 && <section><h2>Recent projects</h2>{recent.map(path => <div className="recent-project" key={path}><button disabled={busy} onClick={() => void open(path)}><strong>{path.split('/').pop()}</strong><span>{path}</span><span>{running[path]?.count ?? 0} running{running[path]?.attention ? ` · ${running[path].attention} need attention` : ''}</span></button><button aria-label={`Forget ${path}`} onClick={() => void forget(path)}>Forget</button></div>)}</section>}
+    {recent.length > 0 && <section><h2>Recent projects</h2>{recent.map(path => <div className="recent-project" key={path}><button disabled={busy} onClick={() => void open(path)}><strong>{path.split('/').pop()}</strong><span>{path}</span><span>{running[path]?.count ?? 0} running{running[path]?.attention ? ` · ${running[path].attention} need attention` : ''}</span></button><button className="button-icon" aria-label={`Forget ${path}`} title="Forget" onClick={() => void forget(path)}>✕</button></div>)}</section>}
   </div>{picker && <FolderPicker create={picker === 'create'} busy={busy} error={error} onClose={() => { setPicker(null); setError(''); }} onSelect={path => void open(path, picker === 'create')} />}</main>;
 }
