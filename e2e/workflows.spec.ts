@@ -90,6 +90,8 @@ test('creates a pull request for an experiment and shows its status, with a work
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root });
   git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com'); git('add', '.'); git('commit', '-qm', 'Initial');
 
+  await page.route('**/api/agents', route => route.fulfill({ json: { claude: false, codex: false, gh: true } }));
+
   await page.getByRole('button', { name: 'Workspace tools', exact: true }).click();
   const panel = page.getByRole('complementary', { name: 'Workspace tools' });
   await panel.getByRole('button', { name: 'Experiments', exact: true }).click();
