@@ -75,6 +75,16 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
   app.post('/api/workspaces/:id/experiments/:experiment/merge', route(async (req, res) => {
     const w = workspace(req); await experiments.locked(w.id, () => experiments.merge(w.id, String(req.params.experiment))); res.json({ ok: true });
   }));
+  app.patch('/api/workspaces/:id/experiments/:experiment/winner', route((req, res) => {
+    const w = workspace(req); const record = store.register(w);
+    const experiment = record.experiments.find(e => e.id === req.params.experiment);
+    if (!experiment) throw new Error('Unknown experiment');
+    if (!experiment.raceId) throw new Error('Only race members can be marked as a winner.');
+    const winner = req.body?.winner === true;
+    if (winner) for (const member of record.experiments) if (member.raceId === experiment.raceId) member.winner = member.id === experiment.id;
+    else experiment.winner = false;
+    store.changed(); res.json({ ok: true });
+  }));
   app.delete('/api/workspaces/:id/experiments/:experiment', route(async (req, res) => {
     const w = workspace(req); const record = store.register(w); const experiment = record.experiments.find(e => e.id === req.params.experiment);
     if (!experiment) throw new Error('Unknown experiment');

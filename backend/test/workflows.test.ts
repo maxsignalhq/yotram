@@ -260,4 +260,37 @@ describe('agent races', () => {
     expect(activity.checkpoints).toHaveLength(1);
     expect(activity.checkpoints[0].id).toBe(checkpoint.id);
   });
+  it('marks exactly one race member as the winner, server-side, and can clear it', async () => {
+    const { api, workspace } = await setup(gitInit);
+    await stubAgents();
+    const raceResponse = await api(`/api/workspaces/${workspace.id}/races`, 'POST', { prompt: 'Add a footer', agents: ['claude', 'codex'] });
+    const { raceId } = await raceResponse.json();
+    const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const members = activity.experiments.filter((e: any) => e.raceId === raceId);
+    expect(members).toHaveLength(2);
+    const [first, second] = members;
+
+    const setWinner = await api(`/api/workspaces/${workspace.id}/experiments/${first.id}/winner`, 'PATCH', { winner: true });
+    expect(setWinner.status).toBe(200);
+
+    const afterSet = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const afterMembers = afterSet.experiments.filter((e: any) => e.raceId === raceId);
+    expect(afterMembers.find((m: any) => m.id === first.id).winner).toBe(true);
+    expect(afterMembers.find((m: any) => m.id === second.id).winner).toBe(false);
+
+    const clearWinner = await api(`/api/workspaces/${workspace.id}/experiments/${first.id}/winner`, 'PATCH', { winner: false });
+    expect(clearWinner.status).toBe(200);
+    const afterClear = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const afterClearMembers = afterClear.experiments.filter((e: any) => e.raceId === raceId);
+    expect(afterClearMembers.every((m: any) => m.winner !== true)).toBe(true);
+  });
+  it('rejects marking a winner on a standalone (non-raced) experiment', async () => {
+    const { api, workspace } = await setup(gitInit);
+    const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Solo experiment' });
+    const experiment = await created.json();
+    const response = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/winner`, 'PATCH', { winner: true });
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toMatch(/race members/i);
+  });
 });
