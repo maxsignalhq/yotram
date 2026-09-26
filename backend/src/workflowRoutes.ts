@@ -7,6 +7,7 @@ import { installedAgents, ownedResources } from './resources.js';
 import { Experiments } from './experiments.js';
 import { PreviewService } from './preview.js';
 import { applyWinner } from './raceWinner.js';
+import { ghAvailable, createPullRequest, fetchPullRequestStatus } from './github.js';
 
 export function workflowRoutes(app: Express, store: ActivityStore, workspaces: Workspaces, runtime: (workspace: Workspace) => Runtime, experiments: Experiments, previews: PreviewService) {
   const route = (fn: (req: Request, res: Response) => Promise<unknown> | unknown) => (req: Request, res: Response) => { Promise.resolve().then(() => fn(req, res)).catch(error => res.status(400).json({ error: (error as Error).message })); };
@@ -18,7 +19,7 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     const w = workspace(req); if (workspaces.get('local')?.id === w.id) throw new Error('The startup workspace remains available as the default project.'); if (runtime(w).pty.list().some(s => s.exitCode === undefined)) throw new Error('Stop running sessions before forgetting this workspace.');
     workspaces.forget(w.id); const record = store.get(w.id); if (record) { record.forgotten = true; store.changed(); } res.json({ ok: true });
   }));
-  app.get('/api/agents', route(async (_req, res) => res.json(await installedAgents())));
+  app.get('/api/agents', route(async (_req, res) => res.json({ ...(await installedAgents()), gh: await ghAvailable() })));
   app.get('/api/workspaces/:id/activity', route((req, res) => {
     const record = store.register(workspace(req)); store.prune(record);
     res.json({ ...record, output: undefined, outputAt: undefined, persistenceError: store.persistenceError });
@@ -84,6 +85,31 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     const winner = req.body?.winner === true;
     applyWinner(record.experiments, experiment.id, experiment.raceId, winner);
     store.changed(); res.json({ ok: true });
+  }));
+  app.post('/api/workspaces/:id/experiments/:experiment/pr', route(async (req, res) => {
+    const w = workspace(req); const record = store.register(w);
+    const experiment = record.experiments.find(e => e.id === req.params.experiment);
+    if (!experiment) throw new Error('Unknown experiment');
+    if (experiment.prUrl) throw new Error(`A pull request already exists for this experiment: ${experiment.prUrl}`);
+    if (!(await ghAvailable())) throw new Error('GitHub CLI (gh) is not available on the server.');
+    const baseBranch = (await experiments.git(w.path, ['branch', '--show-current'])).trim();
+    if (!baseBranch) throw new Error('Open a real branch (not a detached HEAD) in the original workspace before creating a pull request.');
+    const title = text(req.body?.title ?? experiment.name, 200);
+    const body = text(req.body?.body ?? `Opened from Yotram experiment ${experiment.name}.`, 4000);
+    const result = await createPullRequest(experiment.path, experiment.branch, baseBranch, title, body);
+    experiment.prUrl = result.url; experiment.prState = result.state; experiment.prChecks = result.checks;
+    store.changed(); store.event(w.id, 'experiment', `Opened PR for ${experiment.name}`);
+    res.json(experiment);
+  }));
+  app.get('/api/workspaces/:id/experiments/:experiment/pr', route(async (req, res) => {
+    const w = workspace(req); const record = store.register(w);
+    const experiment = record.experiments.find(e => e.id === req.params.experiment);
+    if (!experiment) throw new Error('Unknown experiment');
+    if (!experiment.prUrl) throw new Error('No pull request has been created for this experiment yet.');
+    const status = await fetchPullRequestStatus(experiment.prUrl);
+    experiment.prState = status.state; experiment.prChecks = status.checks;
+    store.changed();
+    res.json(experiment);
   }));
   app.delete('/api/workspaces/:id/experiments/:experiment', route(async (req, res) => {
     const w = workspace(req); const record = store.register(w); const experiment = record.experiments.find(e => e.id === req.params.experiment);

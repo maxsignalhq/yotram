@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 export interface ActivityEvent { id: string; at: number; kind: string; summary: string; sessionId?: string; file?: string; detail?: string }
 export interface Handoff { id: string; at: number; note: string; next: string; file?: string; port?: number; sessionId?: string; checkpointId?: string; branch?: string }
 export interface Checkpoint { id: string; at: number; label: string; ref: string; patch: string }
-export interface Experiment { id: string; name: string; path: string; branch: string; base: string; at: number; port: number; raceId?: string; agent?: string; sessionId?: string; winner?: boolean }
+export interface Experiment { id: string; name: string; path: string; branch: string; base: string; at: number; port: number; raceId?: string; agent?: string; sessionId?: string; winner?: boolean; prUrl?: string; prState?: 'open' | 'merged' | 'closed'; prChecks?: 'pending' | 'passing' | 'failing' | 'none' }
 export interface WorkspaceRecord { forgotten?: boolean; id: string; name: string; path: string; events: ActivityEvent[]; handoffs: Handoff[]; checkpoints: Checkpoint[]; experiments: Experiment[]; output: Record<string, string>; outputAt?: Record<string, number>; retentionDays: number }
 export const privateFile = (name: string) => /(^|[/\\])(\.env(?:\..*)?|[^/\\]*\.(?:pem|key|p12)|credentials(?:\.[^/\\]*)?|secrets?(?:\.[^/\\]*)?)([/\\]|$)/i.test(name);
 export function redact(text: string): string {

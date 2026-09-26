@@ -47,6 +47,33 @@ async function stubAgents(names: string[] = ['claude', 'codex']) {
   process.env.SHELL = '/bin/sh';
   cleanups.push(() => { process.env.PATH = originalPath; process.env.SHELL = originalShell; });
 }
+async function addOriginRemote(root: string): Promise<string> {
+  const bare = await folder();
+  execFileSync('git', ['init', '--bare', '-q', bare]);
+  execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: root });
+  return bare;
+}
+async function stubGh(prUrl: string, state: 'OPEN' | 'MERGED' | 'CLOSED', checks: 'none' | 'passing' | 'failing' | 'pending') {
+  const bin = await folder();
+  const rollup = checks === 'none' ? '[]' : checks === 'passing' ? '[{"conclusion":"SUCCESS"}]' : checks === 'failing' ? '[{"conclusion":"FAILURE"}]' : '[{"conclusion":null}]';
+  const script = `#!/bin/sh
+if [ "$1" = "pr" ] && [ "$2" = "create" ]; then
+  echo "${prUrl}"
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  echo '{"state":"${state}","statusCheckRollup":${rollup}}'
+  exit 0
+fi
+exit 1
+`;
+  const filePath = path.join(bin, 'gh');
+  await writeFile(filePath, script);
+  await chmod(filePath, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+  cleanups.push(() => { process.env.PATH = originalPath; });
+}
 async function waitFor<T>(fn: () => Promise<T | undefined>, timeout = 4000): Promise<T> {
   const start = Date.now();
   while (Date.now() - start < timeout) { const value = await fn(); if (value !== undefined) return value; await new Promise(r => setTimeout(r, 50)); }
@@ -292,5 +319,87 @@ describe('agent races', () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.error).toMatch(/race members/i);
+  });
+});
+
+describe('GitHub PR integration', () => {
+  it('creates a pull request and stores its url/state/checks on the experiment', async () => {
+    const { api, workspace, root } = await setup(gitInit);
+    await addOriginRemote(root);
+    const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Try a fix' });
+    const experiment = await created.json();
+    await stubGh('https://github.com/test/repo/pull/1', 'OPEN', 'none');
+    const response = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`, 'POST', {});
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.prUrl).toBe('https://github.com/test/repo/pull/1');
+    expect(body.prState).toBe('open');
+    expect(body.prChecks).toBe('none');
+    const activity = await (await api(`/api/workspaces/${workspace.id}/activity`)).json();
+    const stored = activity.experiments.find((e: any) => e.id === experiment.id);
+    expect(stored.prUrl).toBe('https://github.com/test/repo/pull/1');
+  });
+
+  it('rejects creating a second pull request for the same experiment', async () => {
+    const { api, workspace, root } = await setup(gitInit);
+    await addOriginRemote(root);
+    const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Try a fix' });
+    const experiment = await created.json();
+    await stubGh('https://github.com/test/repo/pull/1', 'OPEN', 'none');
+    await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`, 'POST', {});
+    const second = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`, 'POST', {});
+    expect(second.status).toBe(400);
+    const body = await second.json();
+    expect(body.error).toMatch(/already exists/i);
+  });
+
+  it('rejects creating a pull request when gh is not available', async () => {
+    const { api, workspace, root } = await setup(gitInit);
+    await addOriginRemote(root);
+    const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Try a fix' });
+    const experiment = await created.json();
+    const response = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`, 'POST', {});
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toMatch(/gh.*not available/i);
+  });
+
+  it('rejects refreshing a pull request that was never created', async () => {
+    const { api, workspace } = await setup(gitInit);
+    const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Try a fix' });
+    const experiment = await created.json();
+    const response = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toMatch(/no pull request/i);
+  });
+
+  it('refreshes an existing pull request\'s state and checks', async () => {
+    const { api, workspace, root } = await setup(gitInit);
+    await addOriginRemote(root);
+    const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Try a fix' });
+    const experiment = await created.json();
+    await stubGh('https://github.com/test/repo/pull/1', 'OPEN', 'pending');
+    await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`, 'POST', {});
+    await stubGh('https://github.com/test/repo/pull/1', 'MERGED', 'passing');
+    const response = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`);
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.prState).toBe('merged');
+    expect(body.prChecks).toBe('passing');
+  });
+
+  it('reports gh availability on /api/agents', async () => {
+    const { api } = await setup();
+    const before = await (await api('/api/agents')).json();
+    expect(before.gh).toBe(false);
+    const bin = await folder();
+    await writeFile(path.join(bin, 'gh'), '#!/bin/sh\nexit 0\n');
+    await chmod(path.join(bin, 'gh'), 0o755);
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+    cleanups.push(() => { process.env.PATH = originalPath; });
+    const after = await (await api('/api/agents')).json();
+    expect(after.gh).toBe(true);
   });
 });
