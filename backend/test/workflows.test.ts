@@ -358,6 +358,12 @@ describe('GitHub PR integration', () => {
     await addOriginRemote(root);
     const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Try a fix' });
     const experiment = await created.json();
+    const gitPath = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    const gitDir = await folder();
+    execFileSync('cp', [gitPath, path.join(gitDir, 'git')]);
+    const originalPath = process.env.PATH;
+    process.env.PATH = gitDir;
+    cleanups.push(() => { process.env.PATH = originalPath; });
     const response = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`, 'POST', {});
     expect(response.status).toBe(400);
     const body = await response.json();
@@ -391,14 +397,18 @@ describe('GitHub PR integration', () => {
 
   it('reports gh availability on /api/agents', async () => {
     const { api } = await setup();
+    const gitPath = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    const gitDir = await folder();
+    execFileSync('cp', [gitPath, path.join(gitDir, 'git')]);
+    const originalPath = process.env.PATH;
+    process.env.PATH = gitDir;
+    cleanups.push(() => { process.env.PATH = originalPath; });
     const before = await (await api('/api/agents')).json();
     expect(before.gh).toBe(false);
     const bin = await folder();
     await writeFile(path.join(bin, 'gh'), '#!/bin/sh\nexit 0\n');
     await chmod(path.join(bin, 'gh'), 0o755);
-    const originalPath = process.env.PATH;
-    process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
-    cleanups.push(() => { process.env.PATH = originalPath; });
+    process.env.PATH = `${bin}${path.delimiter}${gitDir}`;
     const after = await (await api('/api/agents')).json();
     expect(after.gh).toBe(true);
   });
