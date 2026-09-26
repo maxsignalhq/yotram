@@ -508,7 +508,7 @@ input:hover {
 .recap-banner { text-align: left; padding: 8px 16px; color: var(--ide-accent); background: var(--ide-accent-subtle); border: 0; border-bottom: 1px solid var(--ide-border); cursor: pointer; }
 
 .race-comparison { display: flex; overflow-x: auto; gap: var(--ide-space-3); margin: var(--ide-space-3) 0; }
-.race-comparison-column { flex: 1 1 280px; min-width: 280px; border: 1px solid var(--ide-border); border-radius: var(--ide-radius-md); padding: var(--ide-space-3); }
+.race-comparison-column { flex: 1 1 220px; min-width: 220px; border: 1px solid var(--ide-border); border-radius: var(--ide-radius-md); padding: var(--ide-space-3); }
 .race-comparison-column header { display: flex; align-items: center; justify-content: space-between; gap: var(--ide-space-2); margin-bottom: var(--ide-space-2); }
 .race-comparison-column summary { cursor: pointer; font-family: var(--ide-font-mono); font-size: var(--ide-text-sm); padding: var(--ide-space-1) 0; }
 .diffline-add { background: var(--ide-success-bg); color: var(--ide-success-text); font-family: var(--ide-font-mono); font-size: var(--ide-text-sm); white-space: pre-wrap; padding: 0 var(--ide-space-2); }

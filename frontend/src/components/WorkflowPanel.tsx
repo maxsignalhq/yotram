@@ -98,7 +98,7 @@ export function WorkflowPanel(props: Props) {
       {raceGroups.map(([raceId, members]) => <section key={raceId} className="race-group">
         <h4>Race: {members[0].name.split(' — ').slice(1).join(' — ') || 'task'}<button aria-pressed={comparingRace === raceId} onClick={() => setComparingRace(current => current === raceId ? null : raceId)}>Compare race</button></h4>
         {members.map(experimentCard)}
-        {comparingRace === raceId && <RaceComparison workspaceId={workspace.id} raceId={raceId} members={members} onWinnerChange={refresh} />}
+        {comparingRace === raceId && <RaceComparison workspaceId={workspace.id} raceId={raceId} members={members} resources={resources} onWinnerChange={refresh} />}
       </section>)}
       {standaloneExperiments.map(experimentCard)}
     </>}

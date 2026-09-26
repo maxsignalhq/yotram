@@ -130,4 +130,37 @@ index 1111111..2222222 100644
       { type: 'add', text: 'real add' },
     ]);
   });
+
+  it('parses a quoted file-header path (git quotes non-ASCII/special filenames)', () => {
+    const diff = `diff --git "a/café.txt" "b/café.txt"
+index 1111111..2222222 100644
+--- "a/café.txt"
++++ "b/café.txt"
+@@ -1,1 +1,1 @@
+-old
++new
+`;
+    const [file] = parseUnifiedDiff(diff);
+    expect(file.path).toBe('café.txt');
+    expect(file.status).toBe('modified');
+    expect(file.hunks[0].lines).toEqual([
+      { type: 'remove', text: 'old' },
+      { type: 'add', text: 'new' },
+    ]);
+  });
+
+  it('parses a mix of a quoted-path file followed by a plain-path file without cross-attributing hunks', () => {
+    const diff = `diff --git "a/café.txt" "b/café.txt"
+index 1111111..2222222 100644
+--- "a/café.txt"
++++ "b/café.txt"
+@@ -1,1 +1,1 @@
+-old
++new
+` + MODIFIED;
+    const files = parseUnifiedDiff(diff);
+    expect(files).toHaveLength(2);
+    expect(files.map(f => f.path)).toEqual(['café.txt', 'src/app.ts']);
+    expect(files[1].hunks[0].lines).toHaveLength(5);
+  });
 });

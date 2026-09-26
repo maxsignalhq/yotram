@@ -4,7 +4,7 @@ export interface DiffHunk { header: string; lines: DiffLine[] }
 export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed';
 export interface ParsedFile { path: string; status: FileStatus; additions: number; deletions: number; hunks: DiffHunk[] }
 
-const FILE_HEADER = /^diff --git a\/(.*) b\/(.*)$/;
+const FILE_HEADER = /^diff --git (?:"a\/(.*)"|a\/(.*)) (?:"b\/(.*)"|b\/(.*))$/;
 
 export function parseUnifiedDiff(diffText: string): ParsedFile[] {
   if (!diffText.trim()) return [];
@@ -28,7 +28,7 @@ export function parseUnifiedDiff(diffText: string): ParsedFile[] {
     const header = FILE_HEADER.exec(line);
     if (header) {
       finishFile();
-      aPath = header[1]; bPath = header[2];
+      aPath = header[1] ?? header[2]; bPath = header[3] ?? header[4];
       current = { path: bPath, status: 'modified', additions: 0, deletions: 0, hunks: [] };
       continue;
     }

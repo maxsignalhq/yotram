@@ -119,8 +119,8 @@ test('compares race results side by side and persists a winner pick', async ({ p
   const panel = page.getByRole('complementary', { name: 'Workspace tools' });
   await panel.getByRole('button', { name: 'Experiments', exact: true }).click();
   await panel.getByRole('button', { name: 'Compare race' }).click();
-  await expect(panel.getByText('1 files · +1/-0')).toBeVisible();
-  await expect(panel.getByText('1 files · +2/-0')).toBeVisible();
+  await expect(panel.getByText('1 file · +1/-0')).toBeVisible();
+  await expect(panel.getByText('1 file · +2/-0')).toBeVisible();
 
   await panel.getByRole('button', { name: '★ Mark winner' }).first().click();
   await expect(panel.getByText('★ Winner')).toBeVisible();
