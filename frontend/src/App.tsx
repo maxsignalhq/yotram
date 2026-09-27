@@ -7,6 +7,8 @@ import { Dashboard, type Workspace } from './components/Dashboard';
 import { WorkflowPanel } from './components/WorkflowPanel';
 import { Preview } from './components/Preview';
 import { useTheme } from './theme';
+import { PluginProvider, PluginsMenu } from './plugins/PluginProvider';
+import { GitHistoryPanel } from './plugins/git-history/GitHistoryPanel';
 import { getPermissionState, requestNotificationPermission, notifyProcessExit, type PermissionState } from './notifications';
 
 function terminalId(): string { return typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join(''); }
@@ -22,6 +24,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
   const [previewPort, setPreviewPort] = useState<number | undefined>();
   const [workflow, setWorkflow] = useState(false);
   const [recap, setRecap] = useState('');
+  const [pluginPanel, setPluginPanel] = useState<'git-history' | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/workspaces/${workspace.id}/activity`).then(response => response.json()).then(record => {
@@ -102,7 +105,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
   }
 
   return (
-    <div className="workspace-view">
+    <PluginProvider workspaceId={workspace.id}><div className="workspace-view">
       <header className="workspace-header">
         <div className="workspace-header-left">
           <button className="button-ghost" onClick={() => {
@@ -118,6 +121,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
           }}>Terminal</button>
           <button aria-pressed={preview} onClick={() => setPreview(value => !value)}>Preview</button>
           <button onClick={() => { setWorkflow(value => !value); setRecap(''); }} aria-label="Workspace tools" aria-pressed={workflow}>Workspace tools</button>
+          <PluginsMenu openFile={path => { setOpenPath(path); setOpenVersion(value => value + 1); }} openPanel={setPluginPanel} />
         </div>
         <div className="workspace-header-right">
           {agents.claude && <button onClick={() => resumeInNewTerminal('claude')}>Start Claude</button>}
@@ -163,6 +167,8 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
           </section>}
         </>
       )}
-    </div></div>
+    </div>
+    {pluginPanel === 'git-history' && <GitHistoryPanel workspaceId={workspace.id} theme={theme} onClose={() => setPluginPanel(null)} />}
+    </div></PluginProvider>
   );
 }

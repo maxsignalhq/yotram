@@ -43,6 +43,14 @@ workspace remains available as the default project.
 
 ## Editing, Git, and agents
 
+### Notebook plugin
+
+Open **Plugins** to enable the bundled Notebook plugin for a workspace. Choose a
+local Python executable, then create or open `.ipynb` files to edit cells, run
+Python, view plots/tables, and save outputs. Yotram's integration is TypeScript;
+Python with `jupyter_server` and `ipykernel` is optional and required only for
+execution. See [Notebook setup and the plugin API](docs/plugins.md).
+
 The editor supports nested folders, tabs, save acknowledgements, file/folder creation,
 rename/delete, and external-change handling. Dirty buffers prompt before external changes
 replace them. Only empty directories can be deleted through the file explorer.

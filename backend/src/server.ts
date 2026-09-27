@@ -14,6 +14,11 @@ import { Git } from './git.js';
 import { listSessions } from './sessions.js';
 import { isClientMessage, ServerMessage } from './protocol.js';
 import { Auth, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from './auth.js';
+import { PluginHost } from './plugins.js';
+import { NotebookPlugin } from './notebooks.js';
+import { dataViewerManifest, dataViewerRoutes } from './dataViewer.js';
+import { sqlExplorerManifest, sqlExplorerRoutes } from './sqlExplorer.js';
+import { gitHistoryManifest, gitHistoryRoutes } from './gitHistory.js';
 
 function parseCookies(header: string | undefined): Record<string, string> {
   const result: Record<string, string> = {};
@@ -114,6 +119,12 @@ export function createServer(rootDir: string, options: { password: string; state
   const workspaces = new Workspaces(rootDir);
   const auth = new Auth(options.password);
   const store = new ActivityStore(options.stateDir);
+  const plugins = new PluginHost(options.stateDir ?? path.join(os.homedir(), '.yotram', 'state'));
+  const notebooks = new NotebookPlugin();
+  plugins.register(notebooks);
+  plugins.register({ manifest: dataViewerManifest, deactivate() {}, dispose() {} });
+  plugins.register({ manifest: sqlExplorerManifest, deactivate() {}, dispose() {} });
+  plugins.register({ manifest: gitHistoryManifest, deactivate() {}, dispose() {} });
   workspaces.restore(store.all().filter(record => !record.forgotten));
   store.register(workspaces.get('local')!);
   const runtimes = new Map<string, Runtime>();
@@ -131,6 +142,8 @@ export function createServer(rootDir: string, options: { password: string; state
     if (origin && origin !== `http://${req.headers.host}`) { res.status(403).json({ error: 'Origin not allowed' }); return; }
     next();
   });
+  app.use('/api/workspaces/:id/notebooks', express.json({ limit: '1mb' }));
+  app.use('/api/workspaces/:id/sqlite/query', express.json({ limit: '300kb' }));
   app.use(express.json({ limit: '16kb' }));
   app.post('/api/login', (req, res) => {
     if (!auth.checkPassword(req.body?.password)) {
@@ -169,6 +182,11 @@ export function createServer(rootDir: string, options: { password: string; state
     catch (error) { res.status(400).json({ error: (error as Error).message }); }
   });
   workflowRoutes(app, store, workspaces, runtime, experiments, previews);
+  plugins.routes(app, workspaces);
+  notebooks.routes(app, workspaces, plugins);
+  dataViewerRoutes(app, workspaces, plugins);
+  sqlExplorerRoutes(app, workspaces, plugins);
+  gitHistoryRoutes(app, workspaces, plugins);
   const frontendDist = path.resolve(fileURLToPath(import.meta.url), '../../../frontend/dist');
   app.use(express.static(frontendDist));
   // Terminal error handler: must be registered last, after all routes and
@@ -350,6 +368,7 @@ export function createServer(rootDir: string, options: { password: string; state
       if (closed) return; closed = true;
       for (const r of runtimes.values()) r.dispose();
       previews.close();
+      plugins.dispose();
       store.flush();
       for (const client of wss.clients) client.terminate();
       wss.close();

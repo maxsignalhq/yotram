@@ -13,6 +13,8 @@ export interface GitStatus {
 
 export interface GitBranch { name: string; current: boolean }
 export interface GitDiff { before: string; after: string }
+export interface GitCommit { hash: string; author: string; authoredAt: string; subject: string }
+export interface GitCommitFile { status: string; path: string; previousPath?: string }
 
 export class Git {
   constructor(private readonly rootDir: string) {}
@@ -138,5 +140,60 @@ export class Git {
       throw new Error(`Unknown branch: ${name}`);
     }
     await this.run(['checkout', name]);
+  }
+
+  async history(limit = 100): Promise<GitCommit[]> {
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const output = await this.run(['log', '--first-parent', '-z', `-n${boundedLimit}`, '--format=%H%x00%an%x00%aI%x00%s', '--', '.']);
+    const fields = output.split('\0');
+    if (fields.at(-1) === '') fields.pop();
+    const commits: GitCommit[] = [];
+    for (let i = 0; i + 3 < fields.length; i += 4) {
+      commits.push({ hash: fields[i], author: fields[i + 1], authoredAt: fields[i + 2], subject: fields[i + 3] });
+    }
+    return commits;
+  }
+
+  async commitFiles(hash: string): Promise<GitCommitFile[]> {
+    this.validateCommitHash(hash);
+    await this.run(['cat-file', '-e', `${hash}^{commit}`]);
+    const revision = (await this.run(['rev-list', '--parents', '-n', '1', hash])).trim().split(/\s+/);
+    const trees = revision.length > 1 ? [revision[1], hash] : ['--root', hash];
+    const output = await this.run(['diff-tree', '--no-commit-id', '--name-status', '-r', '-z', '-M', '--relative', ...trees, '--', '.']);
+    const fields = output.split('\0').filter(Boolean);
+    const files: GitCommitFile[] = [];
+    for (let i = 0; i < fields.length;) {
+      const status = fields[i++];
+      if (/^[RC]\d+$/.test(status)) {
+        const previousPath = fields[i++]; const filePath = fields[i++];
+        if (previousPath !== undefined && filePath !== undefined) files.push({ status: status[0], path: filePath, previousPath });
+      } else {
+        const filePath = fields[i++];
+        if (filePath !== undefined) files.push({ status, path: filePath });
+      }
+    }
+    return files;
+  }
+
+  async commitFileDiff(hash: string, filePath: string, previousPath?: string): Promise<GitDiff> {
+    this.validateCommitHash(hash);
+    this.resolve(filePath);
+    if (previousPath !== undefined) this.resolve(previousPath);
+    await this.run(['cat-file', '-e', `${hash}^{commit}`]);
+    const previous = previousPath ?? filePath;
+    const show = async (spec: string): Promise<string> => {
+      try { return await this.run(['show', spec]); }
+      catch (error) {
+        if (/does not exist in|fatal: path .* does not exist|invalid object name/i.test((error as Error).message)) return '';
+        throw error;
+      }
+    };
+    const before = await show(`${hash}^:./${previous}`);
+    const after = await show(`${hash}:./${filePath}`);
+    return { before, after };
+  }
+
+  private validateCommitHash(hash: string): void {
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(hash)) throw new Error('Invalid commit id');
   }
 }

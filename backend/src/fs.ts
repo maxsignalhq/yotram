@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile, mkdir, rename, unlink, rmdir, lstat, realpath } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, rename, unlink, rmdir, lstat, realpath, open } from 'node:fs/promises';
 import path from 'node:path';
 import chokidar, { FSWatcher } from 'chokidar';
 
@@ -41,10 +41,10 @@ export class WorkspaceFs {
     return absolute;
   }
 
-  async create(relPath: string, directory: boolean): Promise<void> {
+  async create(relPath: string, directory: boolean, content = ''): Promise<void> {
     const absolute = await this.safePath(relPath);
     if (directory) await mkdir(absolute);
-    else await writeFile(absolute, '', { flag: 'wx' });
+    else await writeFile(absolute, content, { flag: 'wx' });
   }
 
   async rename(relPath: string, destination: string): Promise<void> {
@@ -76,6 +76,24 @@ export class WorkspaceFs {
 
   async read(relPath: string): Promise<string> {
     return readFile(await this.safePath(relPath), 'utf-8');
+  }
+
+  async readBinary(relPath: string, maxBytes: number): Promise<Buffer> {
+    const absolute = await this.safePath(relPath);
+    const file = await open(absolute, 'r');
+    try {
+      const stat = await file.stat();
+      if (!stat.isFile()) throw new Error('Choose a regular file');
+      if (stat.size > maxBytes) throw new Error(`File exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB preview limit`);
+      const buffer = Buffer.alloc(stat.size);
+      let offset = 0;
+      while (offset < buffer.length) {
+        const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, offset);
+        if (!bytesRead) break;
+        offset += bytesRead;
+      }
+      return buffer.subarray(0, offset);
+    } finally { await file.close(); }
   }
 
   async write(relPath: string, content: string): Promise<void> {

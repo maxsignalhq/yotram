@@ -3,6 +3,7 @@ import MonacoEditor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import type { WsClient } from '../wsClient';
 import type { Theme } from '../theme';
+import { PluginBoundary, usePluginEditor, usePlugins } from '../plugins/PluginProvider';
 
 // Use the locally bundled Monaco instance instead of the default behavior of
 // fetching Monaco from the jsdelivr CDN at runtime. This keeps the editor
@@ -38,10 +39,12 @@ self.MonacoEnvironment = {
 };
 
 interface Document { content: string; saved: string; conflict: boolean; loaded: boolean }
+function isBinaryDatabase(path: string | null | undefined): boolean { return !!path && /\.(?:db|sqlite|sqlite3|parquet)$/i.test(path); }
 export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = 'dark' }: { client: WsClient; path: string | null; openVersion?: number; onDirtyChange?: (dirty: boolean) => void; theme?: Theme }) {
   const [documents, setDocuments] = useState<Record<string, Document>>({});
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const activeRegistration = usePluginEditor(active ?? '');
   useEffect(() => { onDirtyChange?.(Object.values(documents).some(doc => doc.content !== doc.saved)); }, [documents, onDirtyChange]);
   const docs = useRef(documents);
   docs.current = documents;
@@ -59,7 +62,7 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
         const doc = docs.current[msg.path];
         if (!doc) return;
         if (doc.content !== doc.saved) setDocuments(previous => ({ ...previous, [msg.path]: { ...previous[msg.path], conflict: true } }));
-        else if (msg.kind !== 'unlink') client.send({ type: 'fs:read', path: msg.path });
+        else if (msg.kind !== 'unlink' && !isBinaryDatabase(msg.path)) client.send({ type: 'fs:read', path: msg.path });
       }),
       client.on('fs:updated', msg => {
         if (msg.operation === 'create') return;
@@ -79,7 +82,7 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
       }),
     ];
     const status = client.onStatusChange?.(value => {
-      if (value === 'open') for (const name of Object.keys(docs.current)) client.send({ type: 'fs:read', path: name });
+      if (value === 'open') for (const name of Object.keys(docs.current)) if (!isBinaryDatabase(name)) client.send({ type: 'fs:read', path: name });
     });
     return () => { subscriptions.forEach(unsubscribe => unsubscribe()); status?.(); };
   }, [client]);
@@ -87,11 +90,13 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
     if (!path) return;
     setActive(path);
     if (!docs.current[path]) {
-      setDocuments(previous => ({ ...previous, [path]: { content: '', saved: '', conflict: false, loaded: false } }));
-      client.send({ type: 'fs:read', path });
+      const skipTextRead = isBinaryDatabase(path);
+      setDocuments(previous => ({ ...previous, [path]: { content: '', saved: '', conflict: false, loaded: skipTextRead } }));
+      if (!skipTextRead) client.send({ type: 'fs:read', path });
     }
   }, [client, path, openVersion]);
   const save = () => {
+    if (activeRegistration?.readOnly || isBinaryDatabase(active)) return;
     if (active && documents[active]?.loaded) client.send({ type: 'fs:write', path: active, content: documents[active].content });
   };
   useEffect(() => {
@@ -112,19 +117,36 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
           if (active === name) setActive(Object.keys(next).at(-1) ?? null);
         }}>×</button>
       </span>)}
-      <button onClick={save} disabled={!doc?.loaded}>Save</button>
+      <button onClick={save} disabled={!doc?.loaded || !!activeRegistration?.readOnly || isBinaryDatabase(active)}>Save</button>
     </div>
     {error && <div role="alert" className="editor-conflict">{error}<button onClick={() => setError('')}>Dismiss</button></div>}
     {doc?.conflict && <div role="alert" className="editor-conflict">file changed on disk — reload or keep mine?
       <button onClick={() => {
         if (!active) return;
+        if (isBinaryDatabase(active)) {
+          const next = { ...documents }; delete next[active]; setDocuments(next); setActive(null); return;
+        }
         setDocuments(previous => ({ ...previous, [active]: { ...previous[active], saved: previous[active].content, conflict: false } }));
         client.send({ type: 'fs:read', path: active });
       }}>Reload</button>
       <button onClick={() => active && setDocuments(previous => ({ ...previous, [active]: { ...previous[active], conflict: false } }))}>Keep mine</button>
     </div>}
-    {active && doc?.loaded ? <div className="editor-monaco-wrapper"><MonacoEditor path={active} theme={theme === 'dark' ? 'vs-dark' : 'vs'} value={doc.content}
-      options={{ automaticLayout: true }} onChange={value => setDocuments(previous => ({ ...previous, [active]: { ...previous[active], content: value ?? '' } }))} /></div>
-      : <div className="editor-empty">{active ? 'Loading file…' : 'Select a file to start editing'}</div>}
+    {Object.entries(documents).map(([name, item]) => <DocumentEditor key={name} path={name} content={item.content} loaded={item.loaded} theme={theme} active={active === name} onChange={content => setDocuments(previous => previous[name] ? { ...previous, [name]: { ...previous[name], content } } : previous)} />)}
+    {(!active || !doc?.loaded) && !activeRegistration && <div className="editor-empty">{active ? 'Loading file…' : 'Select a file to start editing'}</div>}
+  </div>;
+}
+
+function DocumentEditor({ path, content, loaded, theme, active, onChange }: { path: string; content: string; loaded: boolean; theme: Theme; active: boolean; onChange: (value: string) => void }) {
+  const registration = usePluginEditor(path);
+  const PluginEditor = registration?.component;
+  const binaryDatabase = isBinaryDatabase(path);
+  const { workspaceId } = usePlugins();
+  const [raw, setRaw] = useState(false);
+  if ((!PluginEditor || raw || !loaded) && !active) return null;
+  if (!PluginEditor && !loaded) return null;
+  return <div hidden={!active} className="document-editor">
+    {PluginEditor && registration?.allowTextFallback !== false && <div className="document-view-toolbar"><button onClick={() => setRaw(!raw)}>{raw ? 'Open plugin editor' : 'Open as text'}</button></div>}
+    {binaryDatabase && !PluginEditor ? <div className="editor-empty">Enable the matching data plugin to inspect this binary file safely.</div> : PluginEditor && !raw ? <PluginBoundary onRaw={() => setRaw(true)}><PluginEditor workspaceId={workspaceId} path={path} content={content} theme={theme} onChange={onChange} /></PluginBoundary> :
+      <div className="editor-monaco-wrapper"><MonacoEditor path={path} theme={theme === 'dark' ? 'vs-dark' : 'vs'} value={content} options={{ automaticLayout: true }} onChange={value => onChange(value ?? '')} /></div>}
   </div>;
 }

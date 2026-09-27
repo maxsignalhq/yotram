@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -222,5 +222,54 @@ describe('Git.branches / checkout', () => {
     await writeFile(path.join(root, 'a.txt'), 'uncommitted local edit');
     await expect(git.checkout('feature')).rejects.toThrow();
     expect((await git.status()).branch).toBe('main');
+  });
+});
+
+describe('Git.history', () => {
+  it('lists recent commits, changed paths, and text before/after content', async () => {
+    await initRepo();
+    await writeFile(path.join(root, 'notes.md'), 'first version\n');
+    await run('git', ['add', '.'], { cwd: root });
+    await run('git', ['commit', '-q', '-m', 'Add notes'], { cwd: root });
+    await writeFile(path.join(root, 'notes.md'), 'second version\n');
+    await run('git', ['add', '.'], { cwd: root });
+    await run('git', ['commit', '-q', '-m', 'Update notes'], { cwd: root });
+
+    const commits = await git.history(10);
+    expect(commits.map(commit => commit.subject)).toEqual(['Update notes', 'Add notes']);
+    expect(commits[0].author).toBe('Test');
+    expect(commits[0].hash).toMatch(/^[0-9a-f]{40}$/);
+    const files = await git.commitFiles(commits[0].hash);
+    expect(files).toEqual([{ status: 'M', path: 'notes.md' }]);
+    expect(await git.commitFileDiff(commits[0].hash, 'notes.md')).toEqual({ before: 'first version\n', after: 'second version\n' });
+  });
+
+  it('shows root commit files and rejects invalid ids or workspace escapes', async () => {
+    await initRepo();
+    await writeFile(path.join(root, 'new.txt'), 'new\n');
+    await run('git', ['add', '.'], { cwd: root });
+    await run('git', ['commit', '-q', '-m', 'First commit'], { cwd: root });
+    const [commit] = await git.history();
+    expect(await git.commitFiles(commit.hash)).toEqual([{ status: 'A', path: 'new.txt' }]);
+    expect(await git.commitFileDiff(commit.hash, 'new.txt')).toEqual({ before: '', after: 'new\n' });
+    await expect(git.commitFiles('not-a-commit')).rejects.toThrow('Invalid commit id');
+    await expect(git.commitFileDiff(commit.hash, '../outside.txt')).rejects.toThrow();
+  });
+
+  it('keeps history and changed paths relative to a nested workspace', async () => {
+    await initRepo();
+    await mkdir(path.join(root, 'app'));
+    await writeFile(path.join(root, 'outside.txt'), 'outside one');
+    await writeFile(path.join(root, 'app', 'inside.txt'), 'inside one');
+    await run('git', ['add', '.'], { cwd: root }); await run('git', ['commit', '-q', '-m', 'Initial files'], { cwd: root });
+    await writeFile(path.join(root, 'outside.txt'), 'outside two');
+    await run('git', ['add', '.'], { cwd: root }); await run('git', ['commit', '-q', '-m', 'Update outside'], { cwd: root });
+    await writeFile(path.join(root, 'app', 'inside.txt'), 'inside two');
+    await run('git', ['add', '.'], { cwd: root }); await run('git', ['commit', '-q', '-m', 'Update inside'], { cwd: root });
+    const nestedGit = new Git(path.join(root, 'app'));
+    const commits = await nestedGit.history();
+    expect(commits.map(commit => commit.subject)).toEqual(['Update inside', 'Initial files']);
+    expect(await nestedGit.commitFiles(commits[0].hash)).toEqual([{ status: 'M', path: 'inside.txt' }]);
+    expect(await nestedGit.commitFileDiff(commits[0].hash, 'inside.txt')).toEqual({ before: 'inside one', after: 'inside two' });
   });
 });

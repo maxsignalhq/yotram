@@ -29,6 +29,13 @@ describe('WorkspaceFs', () => {
     expect(content).toBe('hi there');
   });
 
+  it('reads binary files without decoding and enforces a size limit', async () => {
+    const bytes = Buffer.from([0, 255, 10, 128]);
+    await writeFile(path.join(root, 'sample.parquet'), bytes);
+    expect(await fs.readBinary('sample.parquet', 4)).toEqual(bytes);
+    await expect(fs.readBinary('sample.parquet', 3)).rejects.toThrow('preview limit');
+  });
+
   it('writes a file relative to root', async () => {
     await fs.write('new.txt', 'new content');
     expect(await fs.read('new.txt')).toBe('new content');
