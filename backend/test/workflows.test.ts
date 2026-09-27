@@ -340,6 +340,19 @@ describe('GitHub PR integration', () => {
     expect(stored.prUrl).toBe('https://github.com/test/repo/pull/1');
   });
 
+  it('rejects creating a pull request when the experiment has uncommitted changes', async () => {
+    const { api, workspace, root } = await setup(gitInit);
+    await addOriginRemote(root);
+    const created = await api(`/api/workspaces/${workspace.id}/experiments`, 'POST', { name: 'Try a fix' });
+    const experiment = await created.json();
+    await writeFile(path.join(experiment.path, 'app.txt'), 'uncommitted change');
+    await stubGh('https://github.com/test/repo/pull/1', 'OPEN', 'none');
+    const response = await api(`/api/workspaces/${workspace.id}/experiments/${experiment.id}/pr`, 'POST', {});
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toMatch(/commit.*changes/i);
+  });
+
   it('rejects creating a second pull request for the same experiment', async () => {
     const { api, workspace, root } = await setup(gitInit);
     await addOriginRemote(root);

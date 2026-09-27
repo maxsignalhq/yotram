@@ -94,6 +94,8 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     if (!(await ghAvailable())) throw new Error('GitHub CLI (gh) is not available on the server.');
     const baseBranch = (await experiments.git(w.path, ['branch', '--show-current'])).trim();
     if (!baseBranch) throw new Error('Open a real branch (not a detached HEAD) in the original workspace before creating a pull request.');
+    const status = (await experiments.git(experiment.path, ['status', '--porcelain'])).trim();
+    if (status) throw new Error("Commit the experiment's changes before creating a pull request; only committed work is pushed.");
     const title = text(req.body?.title ?? experiment.name, 200);
     const body = text(req.body?.body ?? `Opened from Yotram experiment ${experiment.name}.`, 4000);
     const result = await createPullRequest(experiment.path, experiment.branch, baseBranch, title, body);

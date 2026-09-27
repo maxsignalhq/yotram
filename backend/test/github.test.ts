@@ -23,6 +23,19 @@ describe('reduceChecks', () => {
   it('returns pending when a check has no conclusion yet and none have failed', () => {
     expect(reduceChecks([{ conclusion: 'SUCCESS' }, { conclusion: null }])).toBe('pending');
   });
+  it('treats a StatusContext entry with no conclusion but a failing state as failing', () => {
+    expect(reduceChecks([{ conclusion: null, state: 'FAILURE' }])).toBe('failing');
+  });
+  it('treats ACTION_REQUIRED and STARTUP_FAILURE conclusions as failing', () => {
+    expect(reduceChecks([{ conclusion: 'ACTION_REQUIRED' }])).toBe('failing');
+    expect(reduceChecks([{ conclusion: 'STARTUP_FAILURE' }])).toBe('failing');
+  });
+  it('treats a StatusContext entry with a pending/expected state as pending', () => {
+    expect(reduceChecks([{ conclusion: 'SUCCESS' }, { conclusion: null, state: 'PENDING' }])).toBe('pending');
+  });
+  it('treats a mix of passing CheckRuns and passing StatusContexts as passing', () => {
+    expect(reduceChecks([{ conclusion: 'SUCCESS' }, { conclusion: null, state: 'SUCCESS' }])).toBe('passing');
+  });
 });
 
 describe('ghAvailable', () => {
