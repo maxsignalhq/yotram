@@ -91,14 +91,16 @@ export function workflowRoutes(app: Express, store: ActivityStore, workspaces: W
     const experiment = record.experiments.find(e => e.id === req.params.experiment);
     if (!experiment) throw new Error('Unknown experiment');
     if (experiment.prUrl) throw new Error(`A pull request already exists for this experiment: ${experiment.prUrl}`);
-    if (!(await ghAvailable())) throw new Error('GitHub CLI (gh) is not available on the server.');
-    const baseBranch = (await experiments.git(w.path, ['branch', '--show-current'])).trim();
-    if (!baseBranch) throw new Error('Open a real branch (not a detached HEAD) in the original workspace before creating a pull request.');
-    const status = (await experiments.git(experiment.path, ['status', '--porcelain'])).trim();
-    if (status) throw new Error("Commit the experiment's changes before creating a pull request; only committed work is pushed.");
-    const title = text(req.body?.title ?? experiment.name, 200);
-    const body = text(req.body?.body ?? `Opened from Yotram experiment ${experiment.name}.`, 4000);
-    const result = await createPullRequest(experiment.path, experiment.branch, baseBranch, title, body);
+    const result = await experiments.locked(w.id, async () => {
+      if (!(await ghAvailable())) throw new Error('GitHub CLI (gh) is not available on the server.');
+      const baseBranch = (await experiments.git(w.path, ['branch', '--show-current'])).trim();
+      if (!baseBranch) throw new Error('Open a real branch (not a detached HEAD) in the original workspace before creating a pull request.');
+      const status = (await experiments.git(experiment.path, ['status', '--porcelain'])).trim();
+      if (status) throw new Error("Commit the experiment's changes before creating a pull request; only committed work is pushed.");
+      const title = text(req.body?.title ?? experiment.name, 200);
+      const body = text(req.body?.body ?? `Opened from Yotram experiment ${experiment.name}.`, 4000);
+      return createPullRequest(experiment.path, experiment.branch, baseBranch, title, body);
+    });
     experiment.prUrl = result.url; experiment.prState = result.state; experiment.prChecks = result.checks;
     store.changed(); store.event(w.id, 'experiment', `Opened PR for ${experiment.name}`);
     res.json(experiment);

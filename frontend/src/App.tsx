@@ -105,7 +105,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
     <div className="workspace-view">
       <header className="workspace-header">
         <div className="workspace-header-left">
-          <button onClick={() => {
+          <button className="button-ghost" onClick={() => {
             if (window.confirm(dirty ? 'Discard unsaved edits and return to projects? Terminals will keep running.' : 'Return to projects? Terminals will keep running.')) onLeave();
           }}>Projects</button>
           <strong className="workspace-name">{workspace.name}</strong>
@@ -130,7 +130,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
             title={notifyPermission === 'denied' ? 'Notifications are blocked in your browser settings' : undefined}
             onClick={() => { void requestNotificationPermission().then(setNotifyPermission); }}
           >🔔</button>
-          <button onClick={() => {
+          <button className="button-ghost" onClick={() => {
             void fetch('/api/logout', { method: 'POST' }).finally(() => window.location.reload());
           }}>Log out</button>
         </div>

@@ -38,6 +38,7 @@ export async function createPullRequest(cwd: string, branch: string, base: strin
   const { stdout } = await exec('gh', ['pr', 'create', '--head', branch, '--base', base, '--title', title, '--body', body], { cwd, env: noPromptEnv(), timeout: 30000 });
   const lines = stdout.trim().split('\n').filter(Boolean);
   const url = lines[lines.length - 1].trim();
+  if (!url.startsWith('https://')) throw new Error(`Unexpected output from gh pr create: ${stdout}`);
   try {
     const status = await viewPr(url);
     return { url, ...status };

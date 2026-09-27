@@ -175,6 +175,16 @@ a:focus-visible,
   color: var(--ide-accent);
 }
 
+.button-ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.button-ghost:hover {
+  background: var(--ide-bg-hover);
+}
+
 /* App shell */
 
 .app-shell {
@@ -371,7 +381,7 @@ button[aria-selected='true'], button[aria-pressed='true'], button[aria-current='
 .eyebrow { color: var(--ide-accent); font-size: var(--ide-text-sm); font-weight: var(--ide-weight-semibold); letter-spacing: .14em; }
 .dashboard h1 { font-size: 34px; letter-spacing: -.03em; margin-top: var(--ide-space-2); }
 .dashboard-description, .project-path, .project-card > p { color: var(--ide-text-muted); line-height: 1.6; }
-.project-card { margin: 30px 0; padding: 24px; background: var(--ide-bg-panel); border: 1px solid var(--ide-border); border-radius: var(--ide-radius-md); box-shadow: var(--ide-shadow-panel); }
+.project-card { margin: 30px 0; padding: var(--ide-space-5); background: var(--ide-bg-panel); border: 1px solid var(--ide-border); border-radius: var(--ide-radius-md); box-shadow: var(--ide-shadow-panel); }
 .project-card form { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
 input {
   background: var(--ide-bg);
@@ -387,7 +397,7 @@ input:hover {
   border-color: var(--ide-border-strong);
 }
 .dashboard-actions { display: flex; gap: 8px; }
-.dashboard-actions button, .recent-project > button:first-child, .workspace-header-left button, .workspace-header-right button:not(.button-icon) { padding: 8px 12px; background: var(--ide-bg-elevated); border: 1px solid var(--ide-border); border-radius: 5px; cursor: pointer; }
+.dashboard-actions button, .recent-project > button:first-child, .workspace-header-left button:not(.button-ghost), .workspace-header-right button:not(.button-icon):not(.button-ghost) { padding: 8px 12px; background: var(--ide-bg-elevated); border: 1px solid var(--ide-border); border-radius: 5px; cursor: pointer; }
 .recent-project { display: flex; align-items: center; gap: var(--ide-space-2); margin: 2px 0; padding: var(--ide-space-2) var(--ide-space-2); border-radius: var(--ide-radius-sm); transition: background-color var(--ide-duration-fast) var(--ide-ease-standard); }
 .recent-project:hover { background: var(--ide-bg-elevated); }
 .recent-project > button:first-child { flex: 1; text-align: left; min-width: 0; background: transparent; border: none; padding: 0; }
@@ -515,7 +525,7 @@ input:hover {
 .diffline-remove { background: var(--ide-danger-bg); color: var(--ide-danger-text); font-family: var(--ide-font-mono); font-size: var(--ide-text-sm); white-space: pre-wrap; padding: 0 var(--ide-space-2); }
 .diffline-context { font-family: var(--ide-font-mono); font-size: var(--ide-text-sm); white-space: pre-wrap; padding: 0 var(--ide-space-2); color: var(--ide-text-muted); }
 .winner-badge { color: var(--ide-success-text); font-weight: var(--ide-weight-semibold); margin-left: var(--ide-space-2); }
-.pr-state, .pr-checks { font-size: 12px; padding: 2px 6px; border-radius: 3px; margin-left: 6px; }
+.pr-state, .pr-checks { font-size: var(--ide-text-sm); padding: 2px var(--ide-space-2); border-radius: var(--ide-radius-sm); margin-left: var(--ide-space-2); }
 .pr-state-open { background: var(--ide-accent-subtle); color: var(--ide-accent); }
 .pr-state-merged { background: var(--ide-success-bg); color: var(--ide-success-text); }
 .pr-state-closed { background: var(--ide-danger-bg); color: var(--ide-danger-text); }

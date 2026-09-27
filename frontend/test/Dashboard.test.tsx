@@ -21,5 +21,7 @@ describe('Dashboard', () => {
     render(<Dashboard onOpen={() => {}} />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Forget /tmp/demo' })).toBeInTheDocument());
     await userEvent.click(screen.getByRole('button', { name: 'Forget /tmp/demo' }));
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    await waitFor(() => expect(fetchMock.mock.calls.some(call => call[0] === '/api/workspaces/1' && call[1]?.method === 'DELETE')).toBe(true));
   });
 });
