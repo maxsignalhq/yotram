@@ -1,6 +1,6 @@
 import * as pty from 'node-pty';
 import os from 'node:os';
-import { descendants, processTable } from './resources.js';
+import { agentSearchPath, descendants, processTable } from './resources.js';
 
 interface Session { proc: pty.IPty; output: string; startedAt: number; exitCode?: number; attention?: string; label: string }
 export class PtyManager {
@@ -15,7 +15,7 @@ export class PtyManager {
     if (this.sessions.has(sessionId)) return false;
     if (this.sessions.size >= 50) throw new Error('Close old terminal sessions before starting more (limit 50).');
     const shell = os.platform() === 'win32' ? 'powershell.exe' : (process.env.SHELL ?? '/bin/bash');
-    const env = { ...process.env }; delete env.YOTRAM_PASSWORD;
+    const env: NodeJS.ProcessEnv = { ...process.env, PATH: agentSearchPath() }; delete env.YOTRAM_PASSWORD;
     const proc = pty.spawn(shell, [], { name: 'xterm-color', cols, rows, cwd: this.cwd, env: env as Record<string, string> });
     const session: Session = { proc, output: '', startedAt: Date.now(), label };
     this.sessions.set(sessionId, session);

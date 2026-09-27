@@ -760,3 +760,23 @@ input:hover {
   .workspace-header-right > button:not(.button-icon) { flex: 1 1 auto; padding: 6px 8px; }
   .dashboard h1 { font-size: 23px; }
 }
+
+.filetree-entry-button.is-dragging { opacity: 0.45; }
+.filetree-entry-button.is-drop-target { background: var(--ide-bg-hover); outline: 2px solid var(--ide-text-muted); outline-offset: -2px; }
+.filetree-root { font-weight: 600; border-bottom: 1px solid var(--ide-border); }
+
+/* Desktop splitters overlay the existing grid boundaries without consuming space. */
+@media (min-width: 721px) {
+  .app-shell { position: relative; grid-template-columns: var(--explorer-width, 240px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) var(--terminal-height, 260px); }
+  .app-shell.with-preview { grid-template-columns: var(--explorer-width, 240px) minmax(240px, 1fr) minmax(280px, 1fr); }
+  .app-shell.without-terminal { grid-template-rows: minmax(0, 1fr); }
+  .panel-resizer { position: absolute; z-index: 10; touch-action: none; }
+  .panel-resizer:hover, .panel-resizer:focus-visible { background: var(--ide-accent); outline: none; }
+  .panel-resizer-explorer { left: calc(var(--explorer-width) - 3px); top: 0; bottom: 0; width: 6px; cursor: col-resize; }
+  .panel-resizer-terminal { grid-column: 2; grid-row: 2; left: 0; right: 0; top: -3px; height: 6px; cursor: row-resize; }
+  .resizing-explorer, .resizing-terminal { user-select: none; }
+  .resizing-explorer { cursor: col-resize; }
+  .resizing-terminal { cursor: row-resize; }
+  .resizing-explorer iframe, .resizing-terminal iframe { pointer-events: none; }
+}
+@media (max-width: 720px) { .panel-resizer { display: none; } }

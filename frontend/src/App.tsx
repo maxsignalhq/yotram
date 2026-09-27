@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { WsClient } from './wsClient';
+import { ResizablePanels } from './components/ResizablePanels';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { Terminal } from './components/Terminal';
@@ -140,7 +141,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
         </div>
       </header>
       {recap && <button className="recap-banner" onClick={() => { setWorkflow(true); setRecap(''); }}>While you were away: {recap}. Review activity →</button>}
-      <div className={`app-shell${terminalVisible ? '' : ' without-terminal'}${preview ? ' with-preview' : ''}`}>
+      <ResizablePanels workspaceId={workspace.id} preview={preview} terminalVisible={terminalVisible}>
       {status !== 'open' && (
         <div role="status" className="reconnect-banner">
           reconnecting...
@@ -167,7 +168,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
           </section>}
         </>
       )}
-    </div>
+    </ResizablePanels>
     {pluginPanel === 'git-history' && <GitHistoryPanel workspaceId={workspace.id} theme={theme} onClose={() => setPluginPanel(null)} />}
     </div></PluginProvider>
   );

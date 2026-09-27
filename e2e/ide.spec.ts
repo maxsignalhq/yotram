@@ -156,3 +156,81 @@ test('dashboard buttons open a folder chooser without a typed path', async ({ pa
   await page.getByRole('button', { name: 'index.html', exact: true }).click();
   await expect(page.locator('.monaco-editor')).toContainText('Hello from Yotram');
 });
+
+
+test('drag files and folders, preserve unsaved edits, and reject collisions', async ({ page }) => {
+  mkdirSync(path.join(fixtureDir, 'drag-folder'));
+  writeFileSync(path.join(fixtureDir, 'drag-folder', 'drag.txt'), 'original');
+  mkdirSync(path.join(fixtureDir, 'drag-target'));
+  writeFileSync(path.join(fixtureDir, 'drag-target', 'drag.txt'), 'keep me');
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open current directory' }).click();
+  const row = (name: string) => page.getByRole('button', { name, exact: true });
+  await row('▸ drag-folder').click();
+  await row('drag.txt').click();
+  const editor = page.locator('.monaco-editor');
+  await expect(editor).toContainText('original');
+  await editor.click();
+  await editor.press('ControlOrMeta+A');
+  await editor.pressSequentially('unsaved move', { delay: 30 });
+  await row('drag.txt').dragTo(row('▸ drag-target'));
+  await expect(page.getByRole('alert').first()).toContainText('Destination already exists');
+  expect(readFileSync(path.join(fixtureDir, 'drag-target', 'drag.txt'), 'utf8')).toBe('keep me');
+  await row('drag.txt').dragTo(row('Project root'));
+  await expect.poll(() => readFileSync(path.join(fixtureDir, 'drag.txt'), 'utf8')).toBe('original');
+  await row('drag.txt').dragTo(row('▾ drag-folder'));
+  await expect.poll(() => readFileSync(path.join(fixtureDir, 'drag-folder', 'drag.txt'), 'utf8')).toBe('original');
+  await row('▾ drag-folder').dragTo(row('▸ drag-target'));
+  await expect.poll(() => readFileSync(path.join(fixtureDir, 'drag-target', 'drag-folder', 'drag.txt'), 'utf8')).toBe('original');
+  await expect(editor).toContainText('unsaved move');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => readFileSync(path.join(fixtureDir, 'drag-target', 'drag-folder', 'drag.txt'), 'utf8')).toBe('unsaved move');
+  await row('▾ drag-folder').dragTo(row('Project root'));
+  await expect.poll(() => readFileSync(path.join(fixtureDir, 'drag-folder', 'drag.txt'), 'utf8')).toBe('unsaved move');
+});
+
+
+test('resize explorer and terminal with drag, keyboard, and persisted sizes', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Open current directory' }).click();
+  const explorer = page.getByRole('separator', { name: 'Resize file explorer' });
+  const terminal = page.getByRole('separator', { name: 'Resize terminal', exact: true });
+  const drag = async (handle: typeof explorer, dx: number, dy: number) => {
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 8 });
+    await page.mouse.up();
+  };
+  await expect(explorer).toBeVisible();
+  await expect(page.locator('.xterm-screen')).toHaveCount(0);
+  await drag(explorer, 100, 0);
+  await expect(explorer).toHaveAttribute('aria-valuenow', '340');
+  expect(Math.round((await page.locator('.filetree').boundingBox())!.width)).toBe(340);
+  await explorer.press('ArrowLeft');
+  await expect(explorer).toHaveAttribute('aria-valuenow', '330');
+  await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
+  await expect(page.locator('.xterm-screen')).toBeVisible();
+  await drag(terminal, 0, -80);
+  await expect(terminal).toHaveAttribute('aria-valuenow', '340');
+  expect(Math.round((await page.locator('.terminal-section').boundingBox())!.height)).toBe(340);
+  await page.getByRole('button', { name: 'Hide terminal', exact: true }).click();
+  await expect(terminal).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open terminal', exact: true }).click();
+  await expect(terminal).toHaveAttribute('aria-valuenow', '340');
+  await page.reload();
+  await page.getByRole('button', { name: 'Open current directory' }).click();
+  await expect(explorer).toHaveAttribute('aria-valuenow', '330');
+  await expect(terminal).toHaveAttribute('aria-valuenow', '340');
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await drag(explorer, 1000, 0);
+  const max = await explorer.getAttribute('aria-valuemax');
+  await expect(explorer).toHaveAttribute('aria-valuenow', max!);
+  await explorer.dblclick();
+  await expect(explorer).toHaveAttribute('aria-valuenow', '240');
+  await terminal.dblclick();
+  await expect(terminal).toHaveAttribute('aria-valuenow', '260');
+  await page.setViewportSize({ width: 600, height: 800 });
+  await expect(explorer).toBeHidden();
+  await expect(terminal).toBeHidden();
+});

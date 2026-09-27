@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 const exec = promisify(execFile);
 export interface ProcessInfo { pid: number; parent: number; cpu: number; memoryKB: number; elapsed: string; command: string; ports: number[] }
 export async function processTable(): Promise<ProcessInfo[]> {
@@ -32,9 +33,15 @@ export async function ownedResources(pids: number[]): Promise<ProcessInfo[][]> {
   } catch { /* lsof can return 1 for no listeners or may not be installed. */ }
   return groups;
 }
+export function agentSearchPath(): string {
+  const directories = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+  const localBin = path.join(os.homedir(), '.local', 'bin');
+  if (!directories.includes(localBin)) directories.push(localBin);
+  return directories.join(path.delimiter);
+}
 export async function installedAgents(): Promise<{ claude: boolean; codex: boolean }> {
   async function found(name: string) {
-    for (const directory of (process.env.PATH ?? '').split(path.delimiter)) {
+    for (const directory of agentSearchPath().split(path.delimiter)) {
       try { await access(path.join(directory, name), constants.X_OK); return true; } catch { /* next */ }
     }
     return false;

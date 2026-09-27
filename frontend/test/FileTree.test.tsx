@@ -19,8 +19,9 @@ function fakeClient() {
   };
 }
 
+afterEach(() => cleanup());
+
 describe('FileTree', () => {
-  afterEach(() => cleanup());
 
   it('requests a listing on mount and renders entries', () => {
     const client = fakeClient();
@@ -38,4 +39,42 @@ describe('FileTree', () => {
     fireEvent.click(screen.getByText('a.txt'));
     expect(onOpenFile).toHaveBeenCalledWith('a.txt');
   });
+});
+
+function setupDragTree() {
+  const client = fakeClient();
+  render(<FileTree client={client as unknown as WsClient} onOpenFile={() => {}} />);
+  act(() => client.emit({ type: 'fs:list', path: '.', entries: [
+    { name: 'a.txt', isDirectory: false }, { name: 'src', isDirectory: true },
+  ] }));
+  return client;
+}
+const transfer = () => ({ setData: vi.fn(), effectAllowed: '', dropEffect: '' });
+
+it('moves a file into a folder and reveals it after server confirmation', () => {
+  const client = setupDragTree();
+  const dataTransfer = transfer();
+  fireEvent.dragStart(screen.getByText('a.txt'), { dataTransfer });
+  fireEvent.dragOver(screen.getByText('▸ src'), { dataTransfer });
+  expect(dataTransfer.dropEffect).toBe('move');
+  fireEvent.drop(screen.getByText('▸ src'), { dataTransfer });
+  expect(client.send).toHaveBeenCalledWith({ type: 'fs:rename', path: 'a.txt', destination: 'src/a.txt' });
+  act(() => client.emit({ type: 'fs:updated', path: 'a.txt', destination: 'src/a.txt', operation: 'rename' }));
+  expect(client.send).toHaveBeenCalledWith({ type: 'fs:list', path: 'src' });
+  expect(screen.getByText('▾ src')).toBeTruthy();
+});
+
+it('ignores external drags, same-location drops, and drops into descendants', () => {
+  const client = setupDragTree();
+  const dataTransfer = transfer();
+  fireEvent.drop(screen.getByText('▸ src'), { dataTransfer });
+  fireEvent.dragStart(screen.getByText('a.txt'), { dataTransfer });
+  fireEvent.drop(screen.getByText('Project root'), { dataTransfer });
+  fireEvent.click(screen.getByText('▸ src'));
+  act(() => client.emit({ type: 'fs:list', path: 'src', entries: [{ name: 'child', isDirectory: true }] }));
+  fireEvent.dragStart(screen.getByText('▾ src'), { dataTransfer });
+  fireEvent.drop(screen.getByText('▸ child'), { dataTransfer });
+  fireEvent.dragStart(screen.getByText('▾ src'), { dataTransfer });
+  fireEvent.drop(screen.getByText('▾ src'), { dataTransfer });
+  expect(client.send.mock.calls.filter(([message]) => message.type === 'fs:rename')).toEqual([]);
 });
