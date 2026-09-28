@@ -1,4 +1,5 @@
 // frontend/test/Sidebar.test.tsx
+import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { Sidebar } from '../src/components/Sidebar';
@@ -74,5 +75,18 @@ describe('Sidebar', () => {
     await screen.findByText('No past sessions found for this project.');
     expect(fetch).toHaveBeenCalledTimes(2);
     vi.unstubAllGlobals();
+  });
+
+  it('starts on the tab given by initialTab instead of Files', () => {
+    render(<Sidebar client={fakeClient() as unknown as WsClient} onOpenFile={() => {}} workspacePath="/tmp/proj" onResumeSession={() => {}} initialTab="git" />);
+    expect(screen.getByRole('tab', { name: 'Git' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('sends a view:update patch immediately when the tab is switched', () => {
+    const client = fakeClient();
+    render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} workspacePath="/tmp/proj" onResumeSession={() => {}} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Sessions' }));
+    expect(client.send).toHaveBeenCalledWith({ type: 'view:update', patch: { sidebarTab: 'sessions' } });
   });
 });

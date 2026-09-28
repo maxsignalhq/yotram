@@ -5,13 +5,13 @@ import { SessionsPanel } from './SessionsPanel';
 import type { WsClient } from '../wsClient';
 import type { Theme } from '../theme';
 
-export function Sidebar({ client, onOpenFile, theme = 'dark', onToggleTheme = () => {}, workspacePath, onResumeSession }: {
+export function Sidebar({ client, onOpenFile, theme = 'dark', onToggleTheme = () => {}, workspacePath, onResumeSession, initialTab }: {
   client: WsClient; onOpenFile: (path: string) => void; theme?: Theme; onToggleTheme?: () => void;
-  workspacePath: string; onResumeSession: (command: string) => void;
+  workspacePath: string; onResumeSession: (command: string) => void; initialTab?: 'files' | 'git' | 'sessions';
 }) {
-  const [tab, setTab] = useState<'files' | 'git' | 'sessions'>('files');
-  const [gitOpened, setGitOpened] = useState(false);
-  const [sessionsOpened, setSessionsOpened] = useState(false);
+  const [tab, setTab] = useState<'files' | 'git' | 'sessions'>(initialTab ?? 'files');
+  const [gitOpened, setGitOpened] = useState(initialTab === 'git');
+  const [sessionsOpened, setSessionsOpened] = useState(initialTab === 'sessions');
   // Bumped every time the Sessions tab is (re-)selected, and passed as
   // SessionsPanel's `key`. SessionsPanel only fetches on mount, and the
   // lazy-mount-then-`hidden` pattern below would otherwise leave it mounted
@@ -23,6 +23,7 @@ export function Sidebar({ client, onOpenFile, theme = 'dark', onToggleTheme = ()
     setTab(next);
     if (next === 'git') setGitOpened(true);
     if (next === 'sessions') { setSessionsOpened(true); setSessionsOpenCount(count => count + 1); }
+    client.send({ type: 'view:update', patch: { sidebarTab: next } });
   }
   return <aside className="filetree">
     <div className="filetree-header">
