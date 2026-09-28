@@ -40,7 +40,7 @@ self.MonacoEnvironment = {
 
 interface Document { content: string; saved: string; conflict: boolean; loaded: boolean }
 function isBinaryDatabase(path: string | null | undefined): boolean { return !!path && /\.(?:db|sqlite|sqlite3|parquet)$/i.test(path); }
-export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = 'dark' }: { client: WsClient; path: string | null; openVersion?: number; onDirtyChange?: (dirty: boolean) => void; theme?: Theme }) {
+export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = 'dark', initialOpenFiles, initialActiveFile, initialEditorState }: { client: WsClient; path: string | null; openVersion?: number; onDirtyChange?: (dirty: boolean) => void; theme?: Theme; initialOpenFiles?: string[]; initialActiveFile?: string | null; initialEditorState?: Record<string, unknown> }) {
   const [documents, setDocuments] = useState<Record<string, Document>>({});
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -48,6 +48,25 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
   useEffect(() => { onDirtyChange?.(Object.values(documents).some(doc => doc.content !== doc.saved)); }, [documents, onDirtyChange]);
   const docs = useRef(documents);
   docs.current = documents;
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || !initialOpenFiles?.length) return;
+    restoredRef.current = true;
+    setDocuments(previous => {
+      const next = { ...previous };
+      for (const name of initialOpenFiles) if (!next[name]) next[name] = { content: '', saved: '', conflict: false, loaded: false };
+      return next;
+    });
+    for (const name of initialOpenFiles) client.send({ type: 'fs:read', path: name });
+    if (initialActiveFile) setActive(initialActiveFile);
+  }, [client, initialOpenFiles, initialActiveFile]);
+  const editorViewStates = useRef<Record<string, unknown>>(initialEditorState ?? {});
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      client.send({ type: 'view:update', patch: { openFiles: Object.keys(documents), activeFile: active, editorState: editorViewStates.current } });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [client, documents, active]);
   useEffect(() => {
     const subscriptions = [
       client.on('fs:read', msg => setDocuments(previous => {
@@ -131,12 +150,12 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
       }}>Reload</button>
       <button onClick={() => active && setDocuments(previous => ({ ...previous, [active]: { ...previous[active], conflict: false } }))}>Keep mine</button>
     </div>}
-    {Object.entries(documents).map(([name, item]) => <DocumentEditor key={name} path={name} content={item.content} loaded={item.loaded} theme={theme} active={active === name} onChange={content => setDocuments(previous => previous[name] ? { ...previous, [name]: { ...previous[name], content } } : previous)} />)}
+    {Object.entries(documents).map(([name, item]) => <DocumentEditor key={name} path={name} content={item.content} loaded={item.loaded} theme={theme} active={active === name} onChange={content => setDocuments(previous => previous[name] ? { ...previous, [name]: { ...previous[name], content } } : previous)} initialViewState={editorViewStates.current[name]} onViewStateChange={state => { editorViewStates.current[name] = state; }} />)}
     {(!active || !doc?.loaded) && !activeRegistration && <div className="editor-empty">{active ? 'Loading file…' : 'Select a file to start editing'}</div>}
   </div>;
 }
 
-function DocumentEditor({ path, content, loaded, theme, active, onChange }: { path: string; content: string; loaded: boolean; theme: Theme; active: boolean; onChange: (value: string) => void }) {
+function DocumentEditor({ path, content, loaded, theme, active, onChange, initialViewState, onViewStateChange }: { path: string; content: string; loaded: boolean; theme: Theme; active: boolean; onChange: (value: string) => void; initialViewState?: unknown; onViewStateChange?: (state: unknown) => void }) {
   const registration = usePluginEditor(path);
   const PluginEditor = registration?.component;
   const binaryDatabase = isBinaryDatabase(path);
@@ -147,6 +166,12 @@ function DocumentEditor({ path, content, loaded, theme, active, onChange }: { pa
   return <div hidden={!active} className="document-editor">
     {PluginEditor && registration?.allowTextFallback !== false && <div className="document-view-toolbar"><button onClick={() => setRaw(!raw)}>{raw ? 'Open plugin editor' : 'Open as text'}</button></div>}
     {binaryDatabase && !PluginEditor ? <div className="editor-empty">Enable the matching data plugin to inspect this binary file safely.</div> : PluginEditor && !raw ? <PluginBoundary onRaw={() => setRaw(true)}><PluginEditor workspaceId={workspaceId} path={path} content={content} theme={theme} onChange={onChange} /></PluginBoundary> :
-      <div className="editor-monaco-wrapper"><MonacoEditor path={path} theme={theme === 'dark' ? 'vs-dark' : 'vs'} value={content} options={{ automaticLayout: true }} onChange={value => onChange(value ?? '')} /></div>}
+      <div className="editor-monaco-wrapper"><MonacoEditor path={path} theme={theme === 'dark' ? 'vs-dark' : 'vs'} value={content} options={{ automaticLayout: true }} onChange={value => onChange(value ?? '')}
+        onMount={editor => {
+          if (initialViewState) editor.restoreViewState(initialViewState as monaco.editor.ICodeEditorViewState);
+          const save = () => onViewStateChange?.(editor.saveViewState());
+          editor.onDidChangeCursorPosition(save);
+          editor.onDidScrollChange(save);
+        }} /></div>}
   </div>;
 }

@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { Editor } from '../src/components/Editor';
@@ -54,6 +55,25 @@ describe('Editor', () => {
     fireEvent.change(screen.getByTestId('monaco-stub'), { target: { value: 'edited' } });
     client.emit({ type: 'fs:watch-event', path: 'a.txt', kind: 'change' });
     expect(screen.getByText(/file changed on disk/i)).toBeTruthy();
+  });
+
+  it('opens every file listed in initialOpenFiles and activates initialActiveFile on mount', () => {
+    const client = fakeClient();
+    render(<Editor client={client as unknown as WsClient} path={null} initialOpenFiles={['a.ts', 'b.ts']} initialActiveFile="b.ts" />);
+    expect(client.send).toHaveBeenCalledWith({ type: 'fs:read', path: 'a.ts' });
+    expect(client.send).toHaveBeenCalledWith({ type: 'fs:read', path: 'b.ts' });
+    client.emit({ type: 'fs:read', path: 'b.ts', content: 'active content' });
+    expect(screen.getByRole('tab', { name: /b\.ts/ })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('sends a debounced view:update patch when the open tabs or active file change', async () => {
+    vi.useFakeTimers();
+    const client = fakeClient();
+    render(<Editor client={client as unknown as WsClient} path="a.ts" openVersion={1} />);
+    client.emit({ type: 'fs:read', path: 'a.ts', content: 'hello' });
+    await act(async () => { vi.advanceTimersByTime(1200); });
+    expect(client.send).toHaveBeenCalledWith({ type: 'view:update', patch: expect.objectContaining({ openFiles: ['a.ts'], activeFile: 'a.ts' }) });
+    vi.useRealTimers();
   });
 });
 

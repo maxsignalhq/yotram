@@ -1,5 +1,5 @@
-import type { ClientMessage, ServerMessage } from '../../backend/src/protocol';
-export type { ClientMessage, ServerMessage };
+import type { ClientMessage, ServerMessage, ViewState } from '../../backend/src/protocol';
+export type { ClientMessage, ServerMessage, ViewState };
 
 type Status = 'connecting' | 'open' | 'closed';
 
