@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { WsClient } from './wsClient';
+import { WsClient, type ViewState } from './wsClient';
 import { ResizablePanels } from './components/ResizablePanels';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -52,6 +52,8 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
   const [terminalVisible, setTerminalVisible] = useState(false);
   const [terminals, setTerminals] = useState<string[]>([]);
   const [activeTerminal, setActiveTerminal] = useState('main');
+  const [viewState, setViewState] = useState<ViewState | null>(null);
+  const viewStateAppliedRef = useRef(false);
   const [notifyPermission, setNotifyPermission] = useState<PermissionState>(() => getPermissionState());
   // Mirrors `terminals` for the pty:exit handler below, which must read the
   // *current* list without making the subscription effect depend on
@@ -62,7 +64,7 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
     const c = new WsClient(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/?workspace=${encodeURIComponent(workspace.id)}`);
     c.onStatusChange((s) => {
       setStatus(s);
-      if (s === 'open') { setReady(true); c.send({ type: 'pty:list' }); }
+      if (s === 'open') { setReady(true); c.send({ type: 'pty:list' }); c.send({ type: 'view:get' }); }
       if (s === 'closed') {
         // Re-register the folder if the local server restarted and lost its registry.
         void fetch('/api/workspaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: workspace.path }) }).catch(() => {});
@@ -70,14 +72,33 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
     });
     c.on('pty:list', message => {
       setTerminals(message.sessions.map(session => session.id));
-      setActiveTerminal(current => message.sessions.some(s => s.id === current) ? current : message.sessions[0]?.id ?? '');
-      if (message.sessions.length) setTerminalVisible(true);
+      setActiveTerminal(current => {
+        const restored = viewState?.activeTerminal;
+        if (restored && message.sessions.some(s => s.id === restored)) return restored;
+        return message.sessions.some(s => s.id === current) ? current : message.sessions[0]?.id ?? '';
+      });
+      if (message.sessions.length || viewState?.terminalVisible) setTerminalVisible(true);
+    });
+    c.on('view:state', message => {
+      setViewState(message.state);
+      if (viewStateAppliedRef.current) return;
+      viewStateAppliedRef.current = true;
+      if (message.state.terminalVisible) setTerminalVisible(true);
+      if (message.state.preview) { setPreview(true); if (message.state.previewPort) setPreviewPort(message.state.previewPort); }
     });
     c.on('pty:signal', message => { if (document.visibilityState !== 'visible' && message.kind === 'complete') notifyProcessExit('Command', Number(message.value)); });
     c.on('pty:ready', message => { delete commands.current[message.sessionId]; });
     setClient(c);
     return () => c.close();
   }, [workspace.id, workspace.path]);
+
+  useEffect(() => {
+    if (!client || !viewStateAppliedRef.current) return;
+    const timer = setTimeout(() => {
+      client.send({ type: 'view:update', patch: { terminalVisible, activeTerminal, preview, previewPort } });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [client, terminalVisible, activeTerminal, preview, previewPort]);
 
   useEffect(() => {
     if (!client) return;
@@ -149,8 +170,8 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
       )}
       {ready && (
         <>
-          <Sidebar client={client} onOpenFile={path => { setOpenPath(path); setOpenVersion(value => value + 1); }} theme={theme} onToggleTheme={toggleTheme} workspacePath={workspace.path} onResumeSession={resumeInNewTerminal} />
-          <Editor client={client} path={openPath} openVersion={openVersion} theme={theme} onDirtyChange={setDirty} />
+          <Sidebar client={client} onOpenFile={path => { setOpenPath(path); setOpenVersion(value => value + 1); }} theme={theme} onToggleTheme={toggleTheme} workspacePath={workspace.path} onResumeSession={resumeInNewTerminal} initialTab={viewState?.sidebarTab} />
+          <Editor client={client} path={openPath} openVersion={openVersion} theme={theme} onDirtyChange={setDirty} initialOpenFiles={viewState?.openFiles} initialActiveFile={viewState?.activeFile} initialEditorState={viewState?.editorState} />
           {preview && <Preview workspaceId={workspace.id} initialPort={previewPort} onPortChange={setPreviewPort} />}
           {workflow && <WorkflowPanel workspace={workspace} currentFile={openPath} currentSession={activeTerminal} previewPort={previewPort} onClose={() => setWorkflow(false)} onRun={resumeInNewTerminal} onFile={file => { setOpenPath(file); setOpenVersion(v => v + 1); }} onPreview={port => { setPreviewPort(port); setPreview(true); setWorkflow(false); }} onSession={id => { if (!terminals.includes(id)) setTerminals(values => [...values, id]); setActiveTerminal(id); setTerminalVisible(true); client.send({ type: 'pty:ack', sessionId: id }); }} onOpenWorkspace={w => { if (!dirty || window.confirm('Discard unsaved editor changes and open the experiment?')) onOpenWorkspace(w); }} />}
           {terminals.length > 0 && <section className="terminal-section" hidden={!terminalVisible}>

@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import App from '../src/App';
@@ -211,5 +212,20 @@ describe('resumeInNewTerminal (Sessions tab "Resume" button)', () => {
 
     uuidSpy.mockRestore();
     matchMediaSpy.mockRestore();
+  });
+});
+
+describe('view state restoration', () => {
+  beforeEach(() => { FakeWsClient.instances = []; });
+  afterEach(() => cleanup());
+
+  it('opens the terminal and preview panels from a restored view state, without any click', () => {
+    render(<App />);
+    const client = FakeWsClient.instances[0];
+    client.open();
+    client.emit('pty:list', { type: 'pty:list', sessions: [] });
+    client.emit('view:state', { type: 'view:state', state: { openFiles: [], activeFile: null, editorState: {}, sidebarTab: 'files', terminalVisible: true, activeTerminal: null, preview: true, previewPort: 4321 } });
+    expect(screen.getByRole('button', { name: 'Hide terminal', exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preview', exact: true })).toHaveAttribute('aria-pressed', 'true');
   });
 });
