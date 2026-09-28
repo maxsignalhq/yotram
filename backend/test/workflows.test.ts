@@ -425,4 +425,24 @@ describe('GitHub PR integration', () => {
     const after = await (await api('/api/agents')).json();
     expect(after.gh).toBe(true);
   });
+
+  it('persists view state through a server restart', async () => {
+    const root = await folder(); const state = await folder();
+    const first = createServer(root, { password: 'test', stateDir: state });
+    await new Promise<void>(resolve => first.httpServer.listen(0, '127.0.0.1', resolve));
+    const firstPort = (first.httpServer.address() as AddressInfo).port;
+    const cookie = `${SESSION_COOKIE_NAME}=${new Auth('test').createSessionToken()}`;
+    const workspace = await (await fetch(`http://127.0.0.1:${firstPort}/api/workspaces/default`, { headers: { Cookie: cookie } })).json() as { id: string };
+    const ws = new WebSocket(`ws://127.0.0.1:${firstPort}/?workspace=${workspace.id}`, { headers: { Cookie: cookie } });
+    await new Promise<void>(resolve => ws.once('open', resolve));
+    ws.send(JSON.stringify({ type: 'view:update', patch: { sidebarTab: 'git', terminalVisible: true } }));
+    await new Promise(resolve => setTimeout(resolve, 50));
+    ws.terminate();
+    first.close();
+    const second = createServer(root, { password: 'test', stateDir: state }); cleanups.push(second.close);
+    await new Promise<void>(resolve => second.httpServer.listen(0, '127.0.0.1', resolve));
+    const secondPort = (second.httpServer.address() as AddressInfo).port;
+    const activity = await (await fetch(`http://127.0.0.1:${secondPort}/api/workspaces/${workspace.id}/activity`, { headers: { Cookie: cookie } })).json();
+    expect(activity.viewState).toEqual(expect.objectContaining({ sidebarTab: 'git', terminalVisible: true }));
+  });
 });

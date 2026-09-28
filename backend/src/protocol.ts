@@ -12,6 +12,21 @@ export interface GitCommitMessage { type: 'git:commit'; message: string }
 export interface GitBranchesMessage { type: 'git:branches' }
 export interface GitCheckoutMessage { type: 'git:checkout'; name: string }
 
+export type ViewSidebarTab = 'files' | 'git' | 'sessions';
+export interface ViewState {
+  openFiles: string[];
+  activeFile: string | null;
+  editorState: Record<string, unknown>;
+  sidebarTab: ViewSidebarTab;
+  terminalVisible: boolean;
+  activeTerminal: string | null;
+  preview: boolean;
+  previewPort?: number;
+}
+export interface ViewGetMessage { type: 'view:get' }
+export interface ViewUpdateMessage { type: 'view:update'; patch: Partial<ViewState> }
+export interface ViewStateMessage { type: 'view:state'; state: ViewState }
+
 export type ClientMessage =
   | { type: 'fs:create'; path: string; directory: boolean }
   | { type: 'fs:rename'; path: string; destination: string }
@@ -31,7 +46,9 @@ export type ClientMessage =
   | GitUnstageMessage
   | GitCommitMessage
   | GitBranchesMessage
-  | GitCheckoutMessage;
+  | GitCheckoutMessage
+  | ViewGetMessage
+  | ViewUpdateMessage;
 
 export interface FsListResultMessage { type: 'fs:list'; path: string; entries: { name: string; isDirectory: boolean }[] }
 export interface FsReadResultMessage { type: 'fs:read'; path: string; content: string }
@@ -60,7 +77,26 @@ export type ServerMessage =
   | GitStatusResultMessage
   | GitDiffResultMessage
   | GitBranchesResultMessage
-  | GitErrorMessage;
+  | GitErrorMessage
+  | ViewStateMessage;
+
+function isViewStatePatch(patch: unknown): patch is Partial<ViewState> {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
+  const p = patch as Record<string, unknown>;
+  for (const key of Object.keys(p)) {
+    switch (key) {
+      case 'openFiles': if (!Array.isArray(p.openFiles) || !p.openFiles.every(v => typeof v === 'string')) return false; break;
+      case 'activeFile': if (p.activeFile !== null && typeof p.activeFile !== 'string') return false; break;
+      case 'editorState': if (!p.editorState || typeof p.editorState !== 'object' || Array.isArray(p.editorState)) return false; break;
+      case 'sidebarTab': if (p.sidebarTab !== 'files' && p.sidebarTab !== 'git' && p.sidebarTab !== 'sessions') return false; break;
+      case 'terminalVisible': case 'preview': if (typeof p[key] !== 'boolean') return false; break;
+      case 'activeTerminal': if (p.activeTerminal !== null && typeof p.activeTerminal !== 'string') return false; break;
+      case 'previewPort': if (typeof p.previewPort !== 'number') return false; break;
+      default: return false;
+    }
+  }
+  return true;
+}
 
 export function isClientMessage(x: unknown): x is ClientMessage {
   if (!x || typeof x !== 'object') return false;
@@ -83,6 +119,8 @@ export function isClientMessage(x: unknown): x is ClientMessage {
     case 'git:stage': case 'git:unstage': return str('path');
     case 'git:commit': return str('message');
     case 'git:checkout': return str('name');
+    case 'view:get': return true;
+    case 'view:update': return isViewStatePatch(m.patch);
     default: return false;
   }
 }

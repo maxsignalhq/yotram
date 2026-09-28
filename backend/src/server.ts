@@ -12,7 +12,7 @@ import { workflowRoutes } from './workflowRoutes.js';
 import os from 'node:os';
 import { Git } from './git.js';
 import { listSessions } from './sessions.js';
-import { isClientMessage, ServerMessage } from './protocol.js';
+import { isClientMessage, ServerMessage, ViewState } from './protocol.js';
 import { Auth, SESSION_COOKIE_NAME, SESSION_MAX_AGE_MS } from './auth.js';
 import { PluginHost } from './plugins.js';
 import { NotebookPlugin } from './notebooks.js';
@@ -335,6 +335,19 @@ export function createServer(rootDir: string, options: { password: string; state
               } catch (err) {
                 ws.send(JSON.stringify({ type: 'git:error', message: (err as Error).message }));
               }
+              break;
+            }
+            case 'view:get': {
+              const defaults: ViewState = { openFiles: [], activeFile: null, editorState: {}, sidebarTab: 'files', terminalVisible: false, activeTerminal: null, preview: false };
+              const state: ViewState = { ...defaults, ...store.get(workspace.id)?.viewState };
+              ws.send(JSON.stringify({ type: 'view:state', state }));
+              break;
+            }
+            case 'view:update': {
+              const record = store.register(workspace);
+              const defaults: ViewState = { openFiles: [], activeFile: null, editorState: {}, sidebarTab: 'files', terminalVisible: false, activeTerminal: null, preview: false };
+              record.viewState = { ...defaults, ...record.viewState, ...parsed.patch };
+              store.changed();
               break;
             }
             case 'git:checkout': {
