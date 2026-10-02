@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileTree } from './FileTree';
 import { GitPanel } from './GitPanel';
 import { SessionsPanel } from './SessionsPanel';
@@ -12,6 +12,16 @@ export function Sidebar({ client, onOpenFile, theme = 'dark', onToggleTheme = ()
   const [tab, setTab] = useState<'files' | 'git' | 'sessions'>(initialTab ?? 'files');
   const [gitOpened, setGitOpened] = useState(initialTab === 'git');
   const [sessionsOpened, setSessionsOpened] = useState(initialTab === 'sessions');
+  // The restored tab usually arrives after mount (view:state is a reply to a
+  // request sent on connect), so apply it once when it first shows up.
+  const initialTabApplied = useRef(initialTab !== undefined);
+  useEffect(() => {
+    if (!initialTab || initialTabApplied.current) return;
+    initialTabApplied.current = true;
+    setTab(initialTab);
+    if (initialTab === 'git') setGitOpened(true);
+    if (initialTab === 'sessions') setSessionsOpened(true);
+  }, [initialTab]);
   // Bumped every time the Sessions tab is (re-)selected, and passed as
   // SessionsPanel's `key`. SessionsPanel only fetches on mount, and the
   // lazy-mount-then-`hidden` pattern below would otherwise leave it mounted

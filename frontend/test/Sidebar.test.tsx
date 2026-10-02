@@ -83,6 +83,17 @@ describe('Sidebar', () => {
     expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'false');
   });
 
+  it('switches to initialTab when it arrives after mount, but only once', () => {
+    const client = fakeClient() as unknown as WsClient;
+    const props = { client, onOpenFile: () => {}, workspacePath: '/tmp/proj', onResumeSession: () => {} };
+    const { rerender } = render(<Sidebar {...props} />);
+    rerender(<Sidebar {...props} initialTab="git" />);
+    expect(screen.getByRole('tab', { name: 'Git' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    rerender(<Sidebar {...props} initialTab="git" />);
+    expect(screen.getByRole('tab', { name: 'Files' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('sends a view:update patch immediately when the tab is switched', () => {
     const client = fakeClient();
     render(<Sidebar client={client as unknown as WsClient} onOpenFile={() => {}} workspacePath="/tmp/proj" onResumeSession={() => {}} />);
