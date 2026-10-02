@@ -49,24 +49,36 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
   const docs = useRef(documents);
   docs.current = documents;
   const restoredRef = useRef(false);
+  const editorViewStates = useRef<Record<string, unknown>>({});
+  // Bumped by cursor/scroll changes so they get persisted on their own.
+  const [viewTick, setViewTick] = useState(0);
   useEffect(() => {
-    if (restoredRef.current || !initialOpenFiles?.length) return;
+    // Consume the first restored state we see, even an empty one, so a later
+    // (e.g. reconnect) view state never injects tabs into a live session.
+    if (restoredRef.current || !initialOpenFiles) return;
     restoredRef.current = true;
+    Object.assign(editorViewStates.current, initialEditorState);
+    if (!initialOpenFiles.length) return;
     setDocuments(previous => {
       const next = { ...previous };
-      for (const name of initialOpenFiles) if (!next[name]) next[name] = { content: '', saved: '', conflict: false, loaded: false };
+      for (const name of initialOpenFiles) if (!next[name]) next[name] = { content: '', saved: '', conflict: false, loaded: isBinaryDatabase(name) };
       return next;
     });
-    for (const name of initialOpenFiles) client.send({ type: 'fs:read', path: name });
+    for (const name of initialOpenFiles) if (!isBinaryDatabase(name)) client.send({ type: 'fs:read', path: name });
     if (initialActiveFile) setActive(initialActiveFile);
-  }, [client, initialOpenFiles, initialActiveFile]);
-  const editorViewStates = useRef<Record<string, unknown>>(initialEditorState ?? {});
+  }, [client, initialOpenFiles, initialActiveFile, initialEditorState]);
+  // Persist on tab-set / active-file / cursor changes only: depending on
+  // `documents` itself would also fire on file reloads and keystrokes, letting
+  // an idle device overwrite the state of the device being used.
+  const openKey = Object.keys(documents).join('\n');
   useEffect(() => {
     const timer = setTimeout(() => {
-      client.send({ type: 'view:update', patch: { openFiles: Object.keys(documents), activeFile: active, editorState: editorViewStates.current } });
+      const names = openKey ? openKey.split('\n') : [];
+      const editorState = Object.fromEntries(Object.entries(editorViewStates.current).filter(([name]) => names.includes(name)));
+      client.send({ type: 'view:update', patch: { openFiles: names, activeFile: active, editorState } });
     }, 1000);
     return () => clearTimeout(timer);
-  }, [client, documents, active]);
+  }, [client, openKey, active, viewTick]);
   useEffect(() => {
     const subscriptions = [
       client.on('fs:read', msg => setDocuments(previous => {
@@ -150,7 +162,7 @@ export function Editor({ client, path, openVersion = 0, onDirtyChange, theme = '
       }}>Reload</button>
       <button onClick={() => active && setDocuments(previous => ({ ...previous, [active]: { ...previous[active], conflict: false } }))}>Keep mine</button>
     </div>}
-    {Object.entries(documents).map(([name, item]) => <DocumentEditor key={name} path={name} content={item.content} loaded={item.loaded} theme={theme} active={active === name} onChange={content => setDocuments(previous => previous[name] ? { ...previous, [name]: { ...previous[name], content } } : previous)} initialViewState={editorViewStates.current[name]} onViewStateChange={state => { editorViewStates.current[name] = state; }} />)}
+    {Object.entries(documents).map(([name, item]) => <DocumentEditor key={name} path={name} content={item.content} loaded={item.loaded} theme={theme} active={active === name} onChange={content => setDocuments(previous => previous[name] ? { ...previous, [name]: { ...previous[name], content } } : previous)} initialViewState={editorViewStates.current[name]} onViewStateChange={state => { editorViewStates.current[name] = state; setViewTick(tick => tick + 1); }} />)}
     {(!active || !doc?.loaded) && !activeRegistration && <div className="editor-empty">{active ? 'Loading file…' : 'Select a file to start editing'}</div>}
   </div>;
 }

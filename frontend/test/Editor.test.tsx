@@ -4,9 +4,15 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import { Editor } from '../src/components/Editor';
 import type { WsClient, ServerMessage } from '../src/wsClient';
 
+const monacoHooks = vi.hoisted(() => ({ cursorListeners: [] as (() => void)[] }));
 vi.mock('@monaco-editor/react', () => ({
-  default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-    <textarea data-testid="monaco-stub" value={value} onChange={(e) => onChange(e.target.value)} />
+  default: ({ value, onChange, onMount }: { value: string; onChange: (v: string) => void; onMount?: (editor: unknown) => void }) => (
+    <textarea data-testid="monaco-stub" value={value} onChange={(e) => onChange(e.target.value)} ref={el => {
+      if (el && !el.dataset.mounted) {
+        el.dataset.mounted = '1';
+        onMount?.({ restoreViewState: vi.fn(), saveViewState: () => ({ cursor: 42 }), onDidChangeCursorPosition: (cb: () => void) => monacoHooks.cursorListeners.push(cb), onDidScrollChange: vi.fn() });
+      }
+    }} />
   ),
   loader: { config: vi.fn() },
 }));
@@ -74,6 +80,60 @@ describe('Editor', () => {
     await act(async () => { vi.advanceTimersByTime(1200); });
     expect(client.send).toHaveBeenCalledWith({ type: 'view:update', patch: expect.objectContaining({ openFiles: ['a.ts'], activeFile: 'a.ts' }) });
     vi.useRealTimers();
+  });
+  describe('review fixes', () => {
+    const open = (client: ReturnType<typeof fakeClient>) => ({ client: client as unknown as WsClient, path: null });
+    afterEach(() => { vi.useRealTimers(); monacoHooks.cursorListeners.length = 0; });
+
+    it('keeps restored cursor state that arrives after mount in the next persisted patch', async () => {
+      vi.useFakeTimers();
+      const client = fakeClient();
+      const { rerender } = render(<Editor {...open(client)} />);
+      rerender(<Editor {...open(client)} initialOpenFiles={['a.ts']} initialActiveFile="a.ts" initialEditorState={{ 'a.ts': { cursor: 7 } }} />);
+      client.emit({ type: 'fs:read', path: 'a.ts', content: 'x' });
+      await act(async () => { vi.advanceTimersByTime(1200); });
+      expect(client.send).toHaveBeenLastCalledWith({ type: 'view:update', patch: expect.objectContaining({ editorState: { 'a.ts': { cursor: 7 } } }) });
+    });
+
+    it('does not persist when a file is merely reloaded after a watch event', async () => {
+      vi.useFakeTimers();
+      const client = fakeClient();
+      render(<Editor client={client as unknown as WsClient} path="a.ts" openVersion={1} />);
+      client.emit({ type: 'fs:read', path: 'a.ts', content: 'v1' });
+      await act(async () => { vi.advanceTimersByTime(1200); });
+      client.send.mockClear();
+      client.emit({ type: 'fs:watch-event', path: 'a.ts', kind: 'change' } as ServerMessage);
+      client.emit({ type: 'fs:read', path: 'a.ts', content: 'v2' });
+      await act(async () => { vi.advanceTimersByTime(1200); });
+      expect(client.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'view:update' }));
+    });
+
+    it('persists a cursor move on its own', async () => {
+      vi.useFakeTimers();
+      const client = fakeClient();
+      render(<Editor client={client as unknown as WsClient} path="a.ts" openVersion={1} />);
+      client.emit({ type: 'fs:read', path: 'a.ts', content: 'v1' });
+      await act(async () => { vi.advanceTimersByTime(1200); });
+      client.send.mockClear();
+      expect(monacoHooks.cursorListeners.length).toBeGreaterThan(0);
+      act(() => { monacoHooks.cursorListeners.forEach(cb => cb()); });
+      await act(async () => { vi.advanceTimersByTime(1200); });
+      expect(client.send).toHaveBeenCalledWith({ type: 'view:update', patch: expect.objectContaining({ editorState: { 'a.ts': { cursor: 42 } } }) });
+    });
+
+    it('does not read binary database files as text when restoring tabs', () => {
+      const client = fakeClient();
+      render(<Editor {...open(client)} initialOpenFiles={['data.parquet', 'a.ts']} initialActiveFile="a.ts" />);
+      expect(client.send).toHaveBeenCalledWith({ type: 'fs:read', path: 'a.ts' });
+      expect(client.send).not.toHaveBeenCalledWith({ type: 'fs:read', path: 'data.parquet' });
+    });
+
+    it('does not inject tabs from a later view state once an empty one was already consumed', () => {
+      const client = fakeClient();
+      const { rerender } = render(<Editor {...open(client)} initialOpenFiles={[]} />);
+      rerender(<Editor {...open(client)} initialOpenFiles={['a.ts']} initialActiveFile="a.ts" />);
+      expect(client.send).not.toHaveBeenCalledWith({ type: 'fs:read', path: 'a.ts' });
+    });
   });
 });
 

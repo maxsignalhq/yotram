@@ -85,13 +85,13 @@ function isViewStatePatch(patch: unknown): patch is Partial<ViewState> {
   const p = patch as Record<string, unknown>;
   for (const key of Object.keys(p)) {
     switch (key) {
-      case 'openFiles': if (!Array.isArray(p.openFiles) || !p.openFiles.every(v => typeof v === 'string')) return false; break;
+      case 'openFiles': if (!Array.isArray(p.openFiles) || p.openFiles.length > 100 || !p.openFiles.every(v => typeof v === 'string' && v.length <= 4096)) return false; break;
       case 'activeFile': if (p.activeFile !== null && typeof p.activeFile !== 'string') return false; break;
-      case 'editorState': if (!p.editorState || typeof p.editorState !== 'object' || Array.isArray(p.editorState)) return false; break;
+      case 'editorState': if (!p.editorState || typeof p.editorState !== 'object' || Array.isArray(p.editorState) || JSON.stringify(p.editorState).length > 256 * 1024) return false; break;
       case 'sidebarTab': if (p.sidebarTab !== 'files' && p.sidebarTab !== 'git' && p.sidebarTab !== 'sessions') return false; break;
       case 'terminalVisible': case 'preview': if (typeof p[key] !== 'boolean') return false; break;
       case 'activeTerminal': if (p.activeTerminal !== null && typeof p.activeTerminal !== 'string') return false; break;
-      case 'previewPort': if (typeof p.previewPort !== 'number') return false; break;
+      case 'previewPort': if (!Number.isInteger(p.previewPort) || (p.previewPort as number) < 1 || (p.previewPort as number) > 65535) return false; break;
       default: return false;
     }
   }

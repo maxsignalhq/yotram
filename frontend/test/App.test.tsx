@@ -229,6 +229,20 @@ describe('view state restoration', () => {
     expect(screen.getByRole('button', { name: 'Preview', exact: true })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('restores the active terminal when pty:list arrives before view:state (the real server order)', () => {
+    const matchMediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: false, media: query, onchange: null, addListener: vi.fn(), removeListener: vi.fn(),
+      addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+    }) as unknown as MediaQueryList);
+    render(<App />);
+    const client = FakeWsClient.instances[0];
+    client.open();
+    client.emit('pty:list', { type: 'pty:list', sessions: [{ id: 'main' }, { id: 'shell-2' }] });
+    client.emit('view:state', { type: 'view:state', state: { openFiles: [], activeFile: null, editorState: {}, sidebarTab: 'files', terminalVisible: false, activeTerminal: 'shell-2', preview: false, previewPort: undefined } });
+    expect(screen.getByRole('button', { name: 'Shell 2', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    matchMediaSpy.mockRestore();
+  });
+
   it('restores the active terminal id once pty:list reports it as a live session', () => {
     // xterm (used by the real, unmocked Terminal component) needs
     // window.matchMedia, which jsdom doesn't implement.

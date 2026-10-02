@@ -54,12 +54,9 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
   const [activeTerminal, setActiveTerminal] = useState('main');
   const [viewState, setViewState] = useState<ViewState | null>(null);
   const viewStateAppliedRef = useRef(false);
-  // Mirrors `viewState` for the pty:list handler below (defined once inside
-  // an effect with a narrow dependency array), which must read the *current*
-  // restored state without making the WebSocket-setup effect depend on
-  // `viewState` (that would tear down and reopen the socket on every patch).
-  const viewStateRef = useRef(viewState);
-  useEffect(() => { viewStateRef.current = viewState; }, [viewState]);
+  // The restored active terminal, held until pty:list reports it live. The
+  // server answers pty:list before view:state, so either message can be last.
+  const pendingTerminalRef = useRef<string | null>(null);
   const [notifyPermission, setNotifyPermission] = useState<PermissionState>(() => getPermissionState());
   // Mirrors `terminals` for the pty:exit handler below, which must read the
   // *current* list without making the subscription effect depend on
@@ -77,19 +74,27 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
       }
     });
     c.on('pty:list', message => {
-      setTerminals(message.sessions.map(session => session.id));
+      const ids = message.sessions.map(session => session.id);
+      terminalsRef.current = ids;
+      setTerminals(ids);
+      const restored = pendingTerminalRef.current;
+      if (restored && ids.includes(restored)) pendingTerminalRef.current = null;
       setActiveTerminal(current => {
-        const restored = viewStateRef.current?.activeTerminal;
-        if (restored && message.sessions.some(s => s.id === restored)) return restored;
-        return message.sessions.some(s => s.id === current) ? current : message.sessions[0]?.id ?? '';
+        if (restored && ids.includes(restored)) return restored;
+        return ids.includes(current) ? current : ids[0] ?? '';
       });
-      if (message.sessions.length || viewStateRef.current?.terminalVisible) setTerminalVisible(true);
+      if (message.sessions.length) setTerminalVisible(true);
     });
     c.on('view:state', message => {
       setViewState(message.state);
       if (viewStateAppliedRef.current) return;
       viewStateAppliedRef.current = true;
       if (message.state.terminalVisible) setTerminalVisible(true);
+      const restored = message.state.activeTerminal;
+      if (restored) {
+        if (terminalsRef.current.includes(restored)) setActiveTerminal(restored);
+        else pendingTerminalRef.current = restored;
+      }
       if (message.state.preview) { setPreview(true); if (message.state.previewPort) setPreviewPort(message.state.previewPort); }
     });
     c.on('pty:signal', message => { if (document.visibilityState !== 'visible' && message.kind === 'complete') notifyProcessExit('Command', Number(message.value)); });

@@ -82,4 +82,22 @@ describe('view state', () => {
     const result = await reply;
     expect(result.state.sidebarTab).toBe('files');
   });
+  it('rejects oversized or malformed patches (too many files, huge editorState, bad port) and leaves state unchanged', async () => {
+    const { connect } = await setup();
+    const ws = await connect();
+    const bad = [
+      { openFiles: Array.from({ length: 101 }, (_, i) => `f${i}.ts`) },
+      { openFiles: ['x'.repeat(4097)] },
+      { editorState: { 'a.ts': 'x'.repeat(300 * 1024) } },
+      { previewPort: -1 }, { previewPort: 1.5 }, { previewPort: 70000 },
+    ];
+    for (const patch of bad) ws.send(JSON.stringify({ type: 'view:update', patch }));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const reply = message(ws, 'view:state');
+    ws.send(JSON.stringify({ type: 'view:get' }));
+    const result = await reply;
+    expect(result.state.openFiles).toEqual([]);
+    expect(result.state.editorState).toEqual({});
+    expect(result.state.previewPort).toBeUndefined();
+  });
 });
