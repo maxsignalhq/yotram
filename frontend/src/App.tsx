@@ -54,6 +54,12 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
   const [activeTerminal, setActiveTerminal] = useState('main');
   const [viewState, setViewState] = useState<ViewState | null>(null);
   const viewStateAppliedRef = useRef(false);
+  // Mirrors `viewState` for the pty:list handler below (defined once inside
+  // an effect with a narrow dependency array), which must read the *current*
+  // restored state without making the WebSocket-setup effect depend on
+  // `viewState` (that would tear down and reopen the socket on every patch).
+  const viewStateRef = useRef(viewState);
+  useEffect(() => { viewStateRef.current = viewState; }, [viewState]);
   const [notifyPermission, setNotifyPermission] = useState<PermissionState>(() => getPermissionState());
   // Mirrors `terminals` for the pty:exit handler below, which must read the
   // *current* list without making the subscription effect depend on
@@ -73,11 +79,11 @@ function WorkspaceIDE({ workspace, onLeave, onOpenWorkspace }: { workspace: Work
     c.on('pty:list', message => {
       setTerminals(message.sessions.map(session => session.id));
       setActiveTerminal(current => {
-        const restored = viewState?.activeTerminal;
+        const restored = viewStateRef.current?.activeTerminal;
         if (restored && message.sessions.some(s => s.id === restored)) return restored;
         return message.sessions.some(s => s.id === current) ? current : message.sessions[0]?.id ?? '';
       });
-      if (message.sessions.length || viewState?.terminalVisible) setTerminalVisible(true);
+      if (message.sessions.length || viewStateRef.current?.terminalVisible) setTerminalVisible(true);
     });
     c.on('view:state', message => {
       setViewState(message.state);
