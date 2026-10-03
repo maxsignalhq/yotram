@@ -7,3 +7,9 @@ playwright-report/
 .playwright-mcp/
 .venv-notebook/
 __pycache__/
+
+.DS_Store
+.env
+.env.*
+.superpowers/
+.claude/
